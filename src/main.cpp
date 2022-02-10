@@ -87,15 +87,15 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 
 	struct value: sor<key_null, boolean, string, real, integer>{};
 
-	struct name : seq<space, if_must<alpha, plus<sor<alnum, one<'_'>>>>> {};
+	struct name : seq<space, seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>> {};
 
 	
 	struct gt : istring<'>' >{};
-	struct ge : istring<'>', '= '>{};
+	struct ge : istring<'>', '='>{};
 	struct lt : istring<'<' > {};
-	struct le : istring<'<', '= '> {};
-	struct eq : istring<'=', '= '> {};
-	struct ue : istring<'!', '= '> {};
+	struct le : istring<'<', '='> {};
+	struct eq : istring<'=', '='> {};
+	struct ue : istring<'!', '='> {};
 
 	struct add : one<'+'> {};
 	struct sub : one<'-'> {};
@@ -109,12 +109,10 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 	struct bl : seq<space, one<'['>> {};
 	struct br : seq<space, one<']'>> {};
 
-
 	struct exp;
 	struct exp_unit;
 
 	struct exp_neg: seq<space, sub, exp_unit>{};
-
 	struct exp_var : seq<name, opt<seq<bl, exp, br>>>{};
 	struct exp_value: sor<value, exp_var>{};
 	struct exp_call_args: seq<exp, star<seq<comma, exp>>>{};
@@ -122,15 +120,43 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 	struct exp_code: seq<key_function, name, pl, opt<exp_call_args>, pr>{};
 	struct exp_paren : seq<pl, exp, pr>{};
 	struct exp_unit : sor<exp_paren, exp_code, exp_call, exp_value, exp_neg>{};
-	struct exp: seq<exp_unit>{};
+
+	struct exp_add_sub: sor<add, sub>{};
+	struct exp_mul_div: sor<mul, div>{};
+
+	struct exp_not : key_not{};
+	struct exp_compare_operator: sor< ue, eq, le, lt, ge, gt>{};
+	struct exp_or : key_or{};
+	struct exp_and: key_and{};
+
+	struct exp_check_mul: seq<exp_unit, opt<seq<space, exp_mul_div, exp_unit>>> {};
+	struct exp_check_add: seq<exp_check_mul, opt<seq<space, exp_add_sub, exp_check_mul>>>{};
+	struct exp_check_not: seq<space, opt<exp_not>, exp_check_add>{};
+	struct exp_check_compare: seq<exp_check_not, opt<seq<space, exp_compare_operator, exp_check_not>>> {};
+	struct exp_check_or: seq<exp_check_compare, opt<seq<space, exp_or, exp_check_compare>>>{};
+	struct exp_check_and : seq<exp_check_or, opt<seq<space, exp_and, exp_check_or>>> {};
+
+	struct exp: exp_check_and {};
+
+	struct type_child_name : name {};
+	struct type_parent_name : name {};
+	struct type: seq<key_type, type_child_name, key_extends, type_parent_name>{};
 
 
-	struct grammar : seq<exp, eof> {};
+	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, name, opt<key_array>, name, opt<seq<assign, exp>>> {};
+
+	struct globals: seq<space, key_globals, newline, star<sor<global, newline>>, key_endglobals>{};
+
+	struct local: seq<opt<key_constant>, key_local, name, opt<key_array>, name, opt<seq<assign, exp>>>{};
+
+
+	struct grammar : seq<local, eof> {};
 }
+
 
 int main(int argn, char** argv) {
 
-	std::string ss = R"( name [ test[ 10 ] ])";
+	std::string ss = "local integer array num";
 
 	tao::pegtl::memory_input in(ss.c_str(), "");
 
