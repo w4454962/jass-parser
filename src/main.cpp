@@ -3,6 +3,8 @@
 #include <tao/pegtl.hpp>
 
 #include <boost/preprocessor.hpp>
+#include <boost/preprocessor/iteration/local.hpp>
+
 #include <tao/pegtl/parse_error.hpp>
 
 #undef or 
@@ -42,12 +44,14 @@ namespace tao::pegtl::jass {
 	struct key_##s : key< str_##s > {};
 
 //生成关键字
-#define KEYWORD_ALL (or)(and)(not)(if)(then)(endif) (loop)(endloop)(function)(endfunction) \
-	(globals)(endglobals)(native)(takes)(set)(call)(returns)(return)(type)(extends)(constant) \
-	(array)(local)(nothing)(integer)(real)(string)(code)(handle)(boolean)(debug)(true)(false)(null)
+#define KEYWORD1	(or)(and)(not)(if)(then)(elseif)(else)(endif) (loop)(endloop)(function)(endfunction) 
+#define KEYWORD2	(globals)(endglobals)(native)(takes)(set)(call)(returns)(return)(exitwhen)(type)(extends)(constant) 
+#define KEYWORD3	(array)(local)(nothing)(integer)(real)(string)(code)(handle)(boolean)(debug)(true)(false)(null)
 
-BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
-
+#define BOOST_PP_LOCAL_MACRO(n) BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD ## n)
+#define BOOST_PP_LOCAL_LIMITS (1, 3)
+#include BOOST_PP_LOCAL_ITERATE()
+ 
 	//关键字文本合集 
 	//struct sor_keyword : sor <BOOST_PP_SEQ_ENUM(BOOST_PP_SEQ_FOR_EACH(MACRO_CONCAT, str_, KEYWORD_ALL))> {};
 	//关键字
@@ -135,30 +139,59 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 	struct exp_check_compare: seq<exp_check_not, opt<seq<space, exp_compare_operator, exp_check_not>>> {};
 	struct exp_check_or: seq<exp_check_compare, opt<seq<space, exp_or, exp_check_compare>>>{};
 	struct exp_check_and : seq<exp_check_or, opt<seq<space, exp_and, exp_check_or>>> {};
-
 	struct exp: exp_check_and {};
 
-	struct type_child_name : name {};
-	struct type_parent_name : name {};
-	struct type: seq<key_type, type_child_name, key_extends, type_parent_name>{};
-
+	struct type_extends: seq<key_type, name, key_extends, name>{};
 
 	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, name, opt<key_array>, name, opt<seq<assign, exp>>> {};
-
 	struct globals: seq<space, key_globals, newline, star<sor<global, newline>>, key_endglobals>{};
 
 	struct local: seq<opt<key_constant>, key_local, name, opt<key_array>, name, opt<seq<assign, exp>>>{};
 
+	struct action;
+	struct action_list : star<sor<action, newline>> {};
 
-	struct grammar : seq<local, eof> {};
+	struct action_call:seq<opt<key_debug>, key_call, exp_call>{};
+	struct action_set:seq<key_set, exp_var, assign, exp>{};
+	struct action_return: seq<key_return, sor<opt<exp>, space>>{};
+	struct action_exitloop: seq<key_exitwhen, exp>{};
+
+	struct statement_if : seq<key_if, exp, key_then, newline, action_list> {};
+	struct statement_elseif : seq<key_elseif, exp, key_then, newline, action_list> {};
+	struct statement_else : seq<key_else, newline, action_list> {};
+
+	struct action_if: seq<statement_if, star<statement_elseif>, opt<statement_else>, key_endif>{};
+	struct action_loop: seq<key_loop, action_list, key_endloop>{};
+
+	struct action: sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop>{};
+
+	struct arg_define: seq<name, name>{};
+
+	struct args_define : seq < sor < key_nothing, seq < arg_define, star<seq<comma, arg_define>> >> > {};
+
+	struct native: seq<key_native, name, key_takes, args_define, key_returns, name>{};
+
+	struct function: seq<key_function, name, key_takes, args_define, key_returns, newline, action_list, key_endloop>{};
+
+	struct chunk: sor<type_extends, globals, native, function>{};
+
+	struct jass: star<sor<chunk, newline, space>>{};
+
+	struct grammar : seq<jass, eof> {};
 }
 
 
 int main(int argn, char** argv) {
 
-	std::string ss = "local integer array num";
+	std::string ss = R"(
 
-	tao::pegtl::memory_input in(ss.c_str(), "");
+globals
+	integer test 
+endglobals
+
+)";
+
+	tao::pegtl::memory_input in(ss.c_str(), ss.c_str() + ss.size());
 
 	try {
 		auto ret = tao::pegtl::parse<tao::pegtl::jass::grammar>(in);
