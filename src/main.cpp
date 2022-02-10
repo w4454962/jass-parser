@@ -11,19 +11,31 @@
 #define MACRO_DEF(r, def, s) def(s)
 #define MACRO_CONCAT(r, head, s)  (BOOST_PP_CAT(head, s))
 
+#pragma warning(disable:4309)
 
 namespace tao::pegtl::jass {
 
 	//注释: 如果是//开头 则不断匹配非换行部分
 	struct comment : if_must<istring<'/', '/'>, plus< not_at<seq<one<'\r', '\n'>>>>> {};
 
+	// :空格|tbl|utf-8文件头
+	struct whilespace: sor<one<' ', '\t'>, istring<0xef, 0xbb, 0xbf>>{};
 
-	
+	// 匹配0 或多个 :注释|空格
+	struct space : star<sor<comment, whilespace>> {};
 
-	//struct sp: seq<sor<comment, >>
+	// :回车|换行|回车换行
+	struct line_char: sor<one<'\r', '\n'>, istring<'\r', '\n'>>{};
+
+	// 匹配一行
+	struct newline: seq<space, line_char> {};
+
+	// 忽略当前行
+	struct igone: star<not_at<line_char>>{};
+
 
 	template< typename Key >
-	struct key : seq<Key, not_at<identifier_other > > {};
+	struct key : seq<space, Key, not_at<identifier_other > > {};
 
 #define KEYWORD(s)  \
 	struct str_##s:TAO_PEGTL_STRING(#s) {}; \
@@ -37,10 +49,15 @@ namespace tao::pegtl::jass {
 BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 
 	//关键字文本合集 
-	struct sor_keyword : sor <BOOST_PP_SEQ_ENUM(BOOST_PP_SEQ_FOR_EACH(MACRO_CONCAT, str_, KEYWORD_ALL))> {};
-	
+	//struct sor_keyword : sor <BOOST_PP_SEQ_ENUM(BOOST_PP_SEQ_FOR_EACH(MACRO_CONCAT, str_, KEYWORD_ALL))> {};
 	//关键字
-	struct keyword : key<sor_keyword> {};
+	//struct keyword : key<sor_keyword> {};
+
+	
+	struct comma: seq<space, one<','>>{};
+
+	struct assign: seq<space, one<'='>>{};
+	
 
 	//单斜杠转义符集合
 	struct single: one<'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', '"', '\'', '0', '\n'>{};
@@ -55,37 +72,57 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 
 	struct boolean: sor<key_true, key_false>{};
 
-	struct string: sor<short_string<'"'>>{};
+	struct string: seq<space, short_string<'"'>>{};
 
 	struct digits: plus< digit> {};
 	struct frac: seq<one<'.'>, digits > {};
 
-	struct real: seq<opt<one< '-' >>, digits, opt<frac>> {};
+	struct real: seq<space, opt<one< '-' >>, space, digits, opt<frac>> {};
 	
-	struct integer256: short_string<'\''>{};
+	struct integer256: seq<space, short_string<'\''>>{};
 	struct integer16: if_must<sor<istring<'0', 'x'>, one<'$'>>, plus<xdigit>>{};
 	struct integer8: if_must<istring<'0'>, plus<odigit>> {};
-	struct integer: seq<opt<one< '-' >>, sor<integer256, integer16, integer8, digits>> {};
+
+	struct integer: seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, digits>> {};
 
 	struct value: sor<key_null, boolean, string, real, integer>{};
 
-	struct name : if_must<alpha, plus<sor<alnum, one<'_'>>>> {};
+	struct name : seq<space, if_must<alpha, plus<sor<alnum, one<'_'>>>>> {};
+
+	
+	struct gt : istring<'>' >{};
+	struct ge : istring<'>', '= '>{};
+	struct lt : istring<'<' > {};
+	struct le : istring<'<', '= '> {};
+	struct eq : istring<'=', '= '> {};
+	struct ue : istring<'!', '= '> {};
+
+	struct add : one<'+'> {};
+	struct sub : one<'-'> {};
+	struct mul : one<'*'> {};
+	struct div : one<'/'> {};
+	struct mod : one<'%'> {};
+
+	
+	struct pl : seq<space, one<'('>>{};
+	struct pr : seq<space, one<')'>> {};
+	struct bl : seq<space, one<'['>> {};
+	struct br : seq<space, one<']'>> {};
+
 
 	struct exp;
 	struct exp_unit;
 
-	struct exp_neg: seq <opt<one< '-' >>, exp_unit>{};
+	struct exp_neg: seq<space, sub, exp_unit>{};
 
-	struct exp_var : seq<name, opt<seq<one<'['>, exp, one<']'>>>>{};
+	struct exp_var : seq<name, opt<seq<bl, exp, br>>>{};
 	struct exp_value: sor<value, exp_var>{};
-	struct exp_call_args: seq<exp, star<seq<one<','>, exp>>>{};
-	struct exp_call: seq<name, one<'('>, opt<exp_call_args>, one<'>'>>{};
-	struct exp_code: seq<key_function, name, one<'('>, opt<exp_call_args>, one<')'>>{};
-	struct exp_paren : seq<one<'('>, exp, one<')'>>{};
+	struct exp_call_args: seq<exp, star<seq<comma, exp>>>{};
+	struct exp_call: seq<name, pl, opt<exp_call_args>, pr>{};
+	struct exp_code: seq<key_function, name, pl, opt<exp_call_args>, pr>{};
+	struct exp_paren : seq<pl, exp, pr>{};
 	struct exp_unit : sor<exp_paren, exp_code, exp_call, exp_value, exp_neg>{};
 	struct exp: seq<exp_unit>{};
-
-
 
 
 	struct grammar : seq<exp, eof> {};
@@ -93,7 +130,7 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 
 int main(int argn, char** argv) {
 
-	std::string ss = R"(10a)";
+	std::string ss = R"( name [ test[ 10 ] ])";
 
 	tao::pegtl::memory_input in(ss.c_str(), "");
 
