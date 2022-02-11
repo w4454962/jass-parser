@@ -13,10 +13,27 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
+    <Filter Include="src\utils">
+      <UniqueIdentifier>{34772672-a194-4d53-b075-ff8da90b8e4b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\utils\unicode.cpp">
+      <Filter>src\utils</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\jass.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils\dynarray.h">
+      <Filter>src\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\utils\unicode.h">
+      <Filter>src\utils</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -20,6 +20,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\utils\unicode.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\jass.hpp" />
+    <ClInclude Include="src\utils\dynarray.h" />
+    <ClInclude Include="src\utils\unicode.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
