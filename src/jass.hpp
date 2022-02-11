@@ -1,16 +1,8 @@
 #pragma once
 
-#include <tao/pegtl.hpp>
-#include <tao/pegtl/parse_error.hpp>
+#include "stdafx.h"
 
-#include <boost/preprocessor.hpp>
-#include <boost/preprocessor/iteration/local.hpp>
-
-#undef or 
-#undef and
-#undef not
-
-#pragma warning(disable:4309)
+#define MSG TAO_PEGTL_RAISE_MESSAGE
 
 namespace tao::pegtl::jass {
 
@@ -45,6 +37,7 @@ namespace tao::pegtl::jass {
 #undef MACRO_DEF
 #undef KEYWORD_ALL
 #undef KEYWORD
+
 
 		//#define MACRO_CONCAT(r, head, s)  (BOOST_PP_CAT(head, s))
 		//关键字文本合集 
@@ -123,7 +116,9 @@ namespace tao::pegtl::jass {
 	struct exp_mul_div : sor<mul, div> {};
 
 	struct exp_not : key_not {};
-	struct exp_compare_operator : sor< ue, eq, le, lt, ge, gt> {};
+
+	struct exp_compare_operator : sor< ue, eq, le, lt, ge, gt, if_must<one<'='>, MSG("ERROR_ASSIGN_AS_EQ")>> {};
+
 	struct exp_or : key_or {};
 	struct exp_and : key_and {};
 
@@ -174,5 +169,8 @@ namespace tao::pegtl::jass {
 	struct jass : star<chunk> {};
 
 	struct grammar : seq<jass, eof> {};
+
 }
 
+
+#undef MSG

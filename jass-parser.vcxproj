@@ -24,6 +24,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\jass.hpp" />
+    <ClInclude Include="src\lng.hpp" />
+    <ClInclude Include="src\stdafx.h" />
     <ClInclude Include="src\utils\dynarray.h" />
     <ClInclude Include="src\utils\unicode.h" />
   </ItemGroup>

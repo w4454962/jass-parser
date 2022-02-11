@@ -35,5 +35,11 @@
     <ClInclude Include="src\utils\unicode.h">
       <Filter>src\utils</Filter>
     </ClInclude>
+    <ClInclude Include="src\lng.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\stdafx.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
