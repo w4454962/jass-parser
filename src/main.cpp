@@ -38,7 +38,7 @@ namespace tao::pegtl::jass {
 	struct key_##s : key< str_##s > {};
 
 //Éú³É¹Ø¼ü×Ö
-#define KEYWORD_ALL	(or)(and)(not)(if)(then)(elseif)(else)(endif) (loop)(endloop)(function)(endfunction) \
+#define KEYWORD_ALL	(or)(and)(not)(if)(then)(elseif)(else)(endif)(loop)(endloop)(function)(endfunction) \
 	(globals)(endglobals)(native)(takes)(set)(call)(returns)(return)(exitwhen)(type)(extends)(constant) \
 	(array)(local)(nothing)(debug)(true)(false)(null)
 
