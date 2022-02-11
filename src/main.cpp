@@ -17,8 +17,11 @@
 
 namespace tao::pegtl::jass {
 
-	//注释: 如果是//开头 则不断匹配非换行部分
-	struct comment : if_must<istring<'/', '/'>, plus< not_at<seq<one<'\r', '\n'>>>>> {};
+	
+	// :回车|换行|回车换行
+	struct line_char : sor<one<'\r', '\n'>, istring<'\r', '\n'>> {};
+
+	struct comment : if_must<two<'/'>, star<seq<not_at<line_char>, bytes<1>>>> {};
 
 	// :空格|tbl|utf-8文件头
 	struct whilespace: sor<one<' ', '\t'>, istring<0xef, 0xbb, 0xbf>>{};
@@ -26,14 +29,12 @@ namespace tao::pegtl::jass {
 	// 匹配0 或多个 :注释|空格
 	struct space : star<sor<comment, whilespace>> {};
 
-	// :回车|换行|回车换行
-	struct line_char: sor<one<'\r', '\n'>, istring<'\r', '\n'>>{};
-
 	// 匹配一行
 	struct newline: seq<space, line_char> {};
 
 	// 忽略当前行
 	struct igone: star<not_at<line_char>>{};
+
 
 
 	template< typename Key >
@@ -133,12 +134,12 @@ namespace tao::pegtl::jass {
 	struct exp_or : key_or{};
 	struct exp_and: key_and{};
 
-	struct exp_check_mul: seq<exp_unit, opt<seq<space, exp_mul_div, exp_unit>>> {};
-	struct exp_check_add: seq<exp_check_mul, opt<seq<space, exp_add_sub, exp_check_mul>>>{};
-	struct exp_check_not: seq<space, opt<exp_not>, exp_check_add>{};
-	struct exp_check_compare: seq<exp_check_not, opt<seq<space, exp_compare_operator, exp_check_not>>> {};
-	struct exp_check_or: seq<exp_check_compare, opt<seq<space, exp_or, exp_check_compare>>>{};
-	struct exp_check_and : seq<exp_check_or, opt<seq<space, exp_and, exp_check_or>>> {};
+	struct exp_check_mul: seq<exp_unit, star<seq<space, exp_mul_div, exp_unit>>> {};
+	struct exp_check_add: seq<exp_check_mul, star<seq<space, exp_add_sub, exp_check_mul>>>{};
+	struct exp_check_not: seq<space, star<exp_not>, exp_check_add>{};
+	struct exp_check_compare: seq<exp_check_not, star<seq<space, exp_compare_operator, exp_check_not>>> {};
+	struct exp_check_or: seq<exp_check_compare, star<seq<space, exp_or, exp_check_compare>>>{};
+	struct exp_check_and : seq<exp_check_or, star<seq<space, exp_and, exp_check_or>>> {};
 	struct exp: exp_check_and {};
 
 	struct type_extends: seq<key_type, name, key_extends, name>{};
@@ -156,14 +157,14 @@ namespace tao::pegtl::jass {
 	struct action_return: seq<key_return, sor<opt<exp>, space>>{};
 	struct action_exitloop: seq<key_exitwhen, exp>{};
 
-	struct statement_if : seq<key_if, exp, key_then, newline, action_list> {};
-	struct statement_elseif : seq<key_elseif, exp, key_then, newline, action_list> {};
-	struct statement_else : seq<key_else, newline, action_list> {};
+	struct if_statement : seq<key_if, exp, key_then, newline, action_list> {};
+	struct elseif_statement : seq<key_elseif, exp, key_then, newline, action_list> {};
+	struct else_statement : seq<key_else, newline, action_list> {};
 
-	struct action_if: seq<statement_if, star<statement_elseif>, opt<statement_else>, key_endif>{};
+	struct action_if: seq<if_statement, star<elseif_statement>, opt<else_statement>, key_endif>{};
 	struct action_loop: seq<key_loop, action_list, key_endloop>{};
 
-	struct action: sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop>{};
+	struct action: sor<local, action_call, action_set, action_return, action_exitloop, action_if, action_loop>{};
 
 	struct arg_define: seq<name, name>{};
 
@@ -171,11 +172,12 @@ namespace tao::pegtl::jass {
 
 	struct native: seq<key_native, name, key_takes, args_define, key_returns, name>{};
 
-	struct function: seq<key_function, name, key_takes, args_define, key_returns, newline, action_list, key_endloop>{};
+	struct function: seq<key_function, name, key_takes, args_define, key_returns, name, newline, action_list, key_endfunction>{};
 
-	struct chunk: sor<type_extends, globals, native, function>{};
+	struct chunk: sor<type_extends, globals, native, function, newline>{};
 
-	struct jass: star<sor<chunk, newline, space>>{};
+	struct jass: star<chunk>{};
+
 
 	struct grammar : seq<jass, eof> {};
 }
@@ -184,12 +186,57 @@ namespace tao::pegtl::jass {
 int main(int argn, char** argv) {
 
 	std::string ss = R"(
-
+   //test
 globals
 	integer test 
 endglobals
+    //
+   //1
 
+ native GetUnitName takes nothing returns string
+ native GetUnitName takes unit handle returns string
+ native GetUnitName takes unit handle, unit handle2 returns string
+
+function GetUnitName takes unit handle returns string
+	local integer i
+	local integer b = 10
+	local integer c = GetUnitName()
+	local integer array d
+	
+	call GetUnitName()
+
+	set i = 0
+
+	set i = i + 1
+
+	set d[1] = 0
+
+	set d[i] = d[i] + 1 - 1
+
+	loop
+		exitwhen i == 10 
+
+		if true then 
+			set i = i + 1
+		elseif 1+1 == 2 then
+			set i = i + 1
+		elseif false then 
+			set i = i + 1
+		else 
+			loop 
+				exitwhen i == 10 
+				if true then 
+
+				endif 
+			endloop
+		endif 
+	endloop
+
+endfunction
+
+  
 )";
+
 
 	tao::pegtl::memory_input in(ss.c_str(), ss.c_str() + ss.size());
 
