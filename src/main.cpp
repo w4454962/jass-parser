@@ -66,25 +66,24 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 	//字符串 匹配一对Q中间的内容
 	template<char Q>
 	struct short_string: if_must<one<Q>, until<one<Q>, character>>{};
+	struct string : seq<space, short_string<'"'>> {};
 
 	struct boolean: sor<key_true, key_false>{};
 
-	struct string: seq<space, short_string<'"'>>{};
-
 	struct digits: plus< digit> {};
 	struct frac: seq<one<'.'>, digits > {};
-
 	struct real: seq<space, opt<one< '-' >>, space, digits, opt<frac>> {};
 	
 	struct integer256: seq<space, short_string<'\''>>{};
 	struct integer16: if_must<sor<istring<'0', 'x'>, one<'$'>>, plus<xdigit>>{};
 	struct integer8: if_must<istring<'0'>, plus<odigit>> {};
-
 	struct integer: seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, digits>> {};
 
-	struct value: sor<key_null, boolean, string, real, integer>{};
-
 	struct name : seq<space, seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>> {};
+
+	struct code: seq<key_function, name>{};
+
+	struct value: sor<key_null, boolean, string, real, integer, code>{};
 
 	
 	struct gt : istring<'>' >{};
@@ -137,7 +136,7 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 	struct type_extends: seq<key_type, name, key_extends, name>{};
 
 	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, name, opt<key_array>, name, opt<seq<assign, exp>>> {};
-	struct globals: seq<space, key_globals, newline, star<sor<global, newline>>, key_endglobals>{};
+	struct globals: if_must<key_globals, must<newline, star<sor<global, newline>>, key_endglobals>>{};
 
 	struct local: seq<opt<key_constant>, key_local, name, opt<key_array>, name, opt<seq<assign, exp>>>{};
 	struct local_list: star<sor<local, newline>> {};
@@ -156,7 +155,7 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 
 	struct action_if: seq<if_statement, star<elseif_statement>, opt<else_statement>, key_endif>{};
 
-	struct action_loop: seq<key_loop, action_list, key_endloop>{};
+	struct action_loop: if_must<key_loop, must<action_list, key_endloop>>{};
 
 	struct action: sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop>{};
 
@@ -164,9 +163,9 @@ BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 
 	struct args_define : seq < sor < key_nothing, seq < arg_define, star<seq<comma, arg_define>> >> > {};
 
-	struct native: seq<key_native, name, key_takes, args_define, key_returns, name>{};
+	struct native: if_must<key_native, must<name, key_takes, args_define, key_returns, name>>{};
 
-	struct function: seq<key_function, name, key_takes, args_define, key_returns, name, newline, local_list, action_list, key_endfunction>{};
+	struct function: if_must<key_function, must<name, key_takes, args_define, key_returns, name, newline, local_list, action_list, key_endfunction>>{};
 
 	struct chunk: sor<type_extends, globals, native, function, newline>{};
 
@@ -217,10 +216,7 @@ function GetUnitName takes unit handle returns string
 			set i = i + 1
 		else 
 			loop 
-				exitwhen i == 10 
-				if true then 
-
-				endif 
+	 
 			endloop
 		endif 
 	endloop
