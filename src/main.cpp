@@ -17,25 +17,18 @@
 
 namespace tao::pegtl::jass {
 
-	
-	// :回车|换行|回车换行
+
 	struct line_char : sor<one<'\r', '\n'>, istring<'\r', '\n'>> {};
 
 	struct comment : if_must<two<'/'>, star<seq<not_at<line_char>, bytes<1>>>> {};
 
-	// :空格|tbl|utf-8文件头
 	struct whilespace: sor<one<' ', '\t'>, istring<0xef, 0xbb, 0xbf>>{};
 
-	// 匹配0 或多个 :注释|空格
 	struct space : star<sor<comment, whilespace>> {};
 
-	// 匹配一行
 	struct newline: seq<space, line_char> {};
 
-	// 忽略当前行
 	struct igone: star<not_at<line_char>>{};
-
-
 
 	template< typename Key >
 	struct key : seq<space, Key, not_at<identifier_other > > {};
@@ -45,13 +38,12 @@ namespace tao::pegtl::jass {
 	struct key_##s : key< str_##s > {};
 
 //生成关键字
-#define KEYWORD1	(or)(and)(not)(if)(then)(elseif)(else)(endif) (loop)(endloop)(function)(endfunction) 
-#define KEYWORD2	(globals)(endglobals)(native)(takes)(set)(call)(returns)(return)(exitwhen)(type)(extends)(constant) 
-#define KEYWORD3	(array)(local)(nothing)(integer)(real)(string)(code)(handle)(boolean)(debug)(true)(false)(null)
+#define KEYWORD_ALL	(or)(and)(not)(if)(then)(elseif)(else)(endif) (loop)(endloop)(function)(endfunction) \
+	(globals)(endglobals)(native)(takes)(set)(call)(returns)(return)(exitwhen)(type)(extends)(constant) \
+	(array)(local)(nothing)(debug)(true)(false)(null)
 
-#define BOOST_PP_LOCAL_MACRO(n) BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD ## n)
-#define BOOST_PP_LOCAL_LIMITS (1, 3)
-#include BOOST_PP_LOCAL_ITERATE()
+BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
+
  
 	//关键字文本合集 
 	//struct sor_keyword : sor <BOOST_PP_SEQ_ENUM(BOOST_PP_SEQ_FOR_EACH(MACRO_CONCAT, str_, KEYWORD_ALL))> {};
@@ -148,6 +140,7 @@ namespace tao::pegtl::jass {
 	struct globals: seq<space, key_globals, newline, star<sor<global, newline>>, key_endglobals>{};
 
 	struct local: seq<opt<key_constant>, key_local, name, opt<key_array>, name, opt<seq<assign, exp>>>{};
+	struct local_list: star<sor<local, newline>> {};
 
 	struct action;
 	struct action_list : star<sor<action, newline>> {};
@@ -162,9 +155,10 @@ namespace tao::pegtl::jass {
 	struct else_statement : seq<key_else, newline, action_list> {};
 
 	struct action_if: seq<if_statement, star<elseif_statement>, opt<else_statement>, key_endif>{};
+
 	struct action_loop: seq<key_loop, action_list, key_endloop>{};
 
-	struct action: sor<local, action_call, action_set, action_return, action_exitloop, action_if, action_loop>{};
+	struct action: sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop>{};
 
 	struct arg_define: seq<name, name>{};
 
@@ -172,12 +166,11 @@ namespace tao::pegtl::jass {
 
 	struct native: seq<key_native, name, key_takes, args_define, key_returns, name>{};
 
-	struct function: seq<key_function, name, key_takes, args_define, key_returns, name, newline, action_list, key_endfunction>{};
+	struct function: seq<key_function, name, key_takes, args_define, key_returns, name, newline, local_list, action_list, key_endfunction>{};
 
 	struct chunk: sor<type_extends, globals, native, function, newline>{};
 
 	struct jass: star<chunk>{};
-
 
 	struct grammar : seq<jass, eof> {};
 }
