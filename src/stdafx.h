@@ -1,5 +1,8 @@
 #pragma once
 
+#pragma execution_character_set("UTF-8")  
+
+
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -7,6 +10,11 @@
 #include <vector>
 #include <utils/unicode.h>
 #include <unordered_map>
+#include <regex>
+#include <memory>
+#define __cpp_lib_format
+
+#include <format>
 
 #include <tao/pegtl.hpp>
 #include <tao/pegtl/parse_error.hpp>
@@ -21,3 +29,5 @@
 #undef not
 
 #pragma warning(disable:4309)
+
+std::string_view convert_message(std::string_view msg);

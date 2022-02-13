@@ -1,9 +1,9 @@
-#pragma once
+ï»¿#pragma once
 
 #include "stdafx.h"
 
-#define MSG TAO_PEGTL_RAISE_MESSAGE
-
+#define ERR TAO_PEGTL_RAISE_MESSAGE
+ 
 namespace tao::pegtl::jass {
 
 	struct line_char : sor<one<'\r', '\n'>, istring<'\r', '\n'>> {};
@@ -25,7 +25,7 @@ namespace tao::pegtl::jass {
 	struct str_##s:TAO_PEGTL_STRING(#s) {}; \
 	struct key_##s : key< str_##s > {};
 
-	//Éú³É¹Ø¼ü×Ö
+	//ç”Ÿæˆå…³é”®å­—
 #define KEYWORD_ALL	(or)(and)(not)(if)(then)(elseif)(else)(endif)(loop)(endloop)(function)(endfunction) \
 	(globals)(endglobals)(native)(takes)(set)(call)(returns)(return)(exitwhen)(type)(extends)(constant) \
 	(array)(local)(nothing)(debug)(true)(false)(null)
@@ -40,9 +40,9 @@ namespace tao::pegtl::jass {
 
 
 		//#define MACRO_CONCAT(r, head, s)  (BOOST_PP_CAT(head, s))
-		//¹Ø¼ü×ÖÎÄ±¾ºÏ¼¯ 
+		//å…³é”®å­—æ–‡æœ¬åˆé›† 
 		//struct sor_keyword : sor <BOOST_PP_SEQ_ENUM(BOOST_PP_SEQ_FOR_EACH(MACRO_CONCAT, str_, KEYWORD_ALL))> {};
-		//¹Ø¼ü×Ö
+		//å…³é”®å­—
 		//struct keyword : key<sor_keyword> {};
 
 
@@ -51,14 +51,14 @@ namespace tao::pegtl::jass {
 	struct assign : seq<space, one<'='>> {};
 
 
-	//µ¥Ğ±¸Ü×ªÒå·û¼¯ºÏ
+	//å•æ–œæ è½¬ä¹‰ç¬¦é›†åˆ
 	struct single : one<'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', '"', '\'', '0', '\n'> {};
 	struct escaped : if_must<one<'\\'>, single> {};
 	struct regular : not_one<'\r', '\n'> {};
 	struct character : sor<escaped, regular> {};
 
 
-	//×Ö·û´® Æ¥ÅäÒ»¶ÔQÖĞ¼äµÄÄÚÈİ
+	//å­—ç¬¦ä¸² åŒ¹é…ä¸€å¯¹Qä¸­é—´çš„å†…å®¹
 	template<char Q>
 	struct short_string : if_must<one<Q>, until<one<Q>, character>> {};
 	struct string : seq<space, short_string<'"'>> {};
@@ -76,7 +76,9 @@ namespace tao::pegtl::jass {
 
 	struct name : seq<space, seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>> {};
 
-	struct code : seq<key_function, name> {};
+	struct code_name : name {};
+
+	struct code : seq<key_function, space, code_name> {};
 
 	struct value : sor<key_null, boolean, string, real, integer, code> {};
 
@@ -117,7 +119,7 @@ namespace tao::pegtl::jass {
 
 	struct exp_not : key_not {};
 
-	struct exp_compare_operator : sor< ue, eq, le, lt, ge, gt, if_must<one<'='>, MSG("ERROR_ASSIGN_AS_EQ")>> {};
+	struct exp_compare_operator : sor< ue, eq, le, lt, ge, gt, if_must<one<'='>, ERR("ERROR_ASSIGN_AS_EQ")>> {};
 
 	struct exp_or : key_or {};
 	struct exp_and : key_and {};
@@ -130,7 +132,9 @@ namespace tao::pegtl::jass {
 	struct exp_check_and : seq<exp_check_or, star<seq<space, exp_and, exp_check_or>>> {};
 	struct exp : exp_check_and {};
 
-	struct type_extends : seq<key_type, name, key_extends, name> {};
+	struct type_name: name {};
+	struct type_parent_name : name {};
+	struct type_extends : if_must<key_type, space, type_name, sor<key_extends, ERR("ERROR_EXTENDS_TYPE")>, space, sor<type_parent_name, ERR("ERROR_EXTENDS_TYPE")>> {};
 
 	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, name, opt<key_array>, name, opt<seq<assign, exp>>> {};
 	struct globals : if_must<key_globals, must<newline, star<sor<global, newline>>, key_endglobals>> {};
@@ -156,21 +160,224 @@ namespace tao::pegtl::jass {
 
 	struct action : sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop> {};
 
-	struct arg_define : seq<name, name> {};
 
-	struct args_define : seq < sor < key_nothing, seq < arg_define, star<seq<comma, arg_define>> >> > {};
+	struct arg_type : name {};
+	struct arg_name: name {};
+	struct arg_statement : seq<space, arg_type, space, arg_name> {};
+	struct args_statement : seq < sor < key_nothing,  seq<arg_statement, star<seq<comma, arg_statement>> >> > {};
+	struct check_returns : sor<key_returns, if_must<key_return, ERR("ERROR_RETURN_AS_RETURNS")>> {};
 
-	struct native : if_must<key_native, must<name, key_takes, args_define, key_returns, name>> {};
+	struct native_statement : if_must<key_native, must<name, key_takes, args_statement, check_returns, name>> {};
 
-	struct function : if_must<key_function, must<name, key_takes, args_define, key_returns, name, newline, local_list, action_list, key_endfunction>> {};
 
-	struct chunk : sor<type_extends, globals, native, function, newline> {};
+	struct function_name :name {};
+	struct function_returns_type : name {};
+
+	struct function_statement : seq<key_function, must<space, function_name, key_takes, space, args_statement, check_returns, space, function_returns_type, newline>>{};
+
+	struct function_block : seq<local_list, action_list> {};
+
+	struct function : if_must<function_statement, function_block, key_endfunction> {};
+
+	struct chunk : sor<type_extends, globals, native_statement, function, newline> {};
 
 	struct jass : star<chunk> {};
 
 	struct grammar : seq<jass, eof> {};
 
+
+	using data_type = std::string;
+
+	template< typename Type >
+	struct container 
+	{ 
+		typedef std::shared_ptr<Type> object_ptr;
+
+		std::vector<object_ptr> list;
+		std::unordered_map <std::string, object_ptr> map;
+
+		bool insert(const std::string& name, object_ptr obj) {
+			if (map.find(name) != map.end()) {
+				return false;
+			}
+			list.push_back(obj);
+			map.emplace(name, obj);
+			return true;
+		}
+
+		object_ptr find(const std::string& name) {
+			if (map.find(name) == map.end()) {
+				return nullptr;
+			}
+			return map.at(name);
+		}
+
+		object_ptr current() {
+			return list.back();
+		}
+	};
+
+	struct state_base {
+		std::shared_ptr<std::string> source;
+		size_t line;
+		size_t column;
+
+		void save_position(std::shared_ptr<std::string> s, const position& p) {
+			source = s;
+			line = p.line;
+			column = p.column;
+		}
+	};
+
+	struct type_state : state_base {
+		data_type name;
+		std::shared_ptr<type_state> parent;
+	};
+
+	struct local_state : state_base {
+		data_type type;
+		data_type name;
+
+		bool is_array;
+	};
+	struct global_state : state_base {
+		data_type type;
+		data_type name;
+		
+		bool is_array;
+	};
+
+	struct arg_state : state_base {
+		data_type type;
+		data_type name;
+	};
+
+	struct function_state : state_base
+	{
+		data_type name;
+
+		container<arg_state> args;
+		data_type returns_type;
+
+		container<local_state> locals;
+	};
+
+	struct native_state : state_base
+	{
+		data_type name;
+
+		container<arg_state> args;
+		data_type returns_type;
+	};
+
+	 
+	struct jass_state
+	{
+		std::shared_ptr<std::string> source;
+
+		container<type_state> types;
+		container<global_state> globals;
+		container<native_state> natives;
+		container<function_state> functions;
+
+		jass_state() {
+			//base type
+
+			std::vector<std::string> base_list = { "integer", "real", "string", "boolean", "code", "handle" };
+
+			for (auto& name : base_list) {
+				auto obj = std::make_shared<type_state>();
+				obj->name = name;
+				types.insert(name, obj);
+			}
+		}
+
+		void set_source(const std::string& s) {
+			source = std::make_shared<std::string>(s);
+		}
+
+	};
+
+
+	template<typename... Args>
+	inline std::string error_format(std::string_view msg, Args... args) {
+		return std::format(convert_message(msg), args...);
+	}
+
+	class jass_parse_error :public parse_error
+	{
+	public:
+		template< typename ParseInput, typename... Args>
+		jass_parse_error(ParseInput& in, const std::string& msg, Args... args)
+			: parse_error(error_format(msg, args...), in)
+		{ }
+	};
+
+	template< typename Rule >
+	struct check_action {};
+	
+
+	//è§£ætype å­ç±»å‹å ç”Ÿæˆl===æ•°æ®
+	template<> struct check_action<type_name>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s)
+		{
+			std::string name = in.string();
+
+			auto type = s.types.find(name);
+			if (type) {
+				throw jass_parse_error(in, "ERROR_REDEFINE_TYPE", name, *type->source, type->line);
+			}
+	
+			type = std::make_shared<type_state>();
+			type->name = name;
+			type->save_position(s.source, in.position());
+			s.types.insert(name, type);
+		}
+	};
+
+	template<> struct check_action<type_parent_name>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s)
+		{
+			std::string name = in.string();
+
+			auto type = s.types.find(name);
+			if (!type) {
+				throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
+			}
+
+			auto child = s.types.current();
+			child->parent = type;
+		}
+	};
+
+
+
+	//è§£æjasså‡½æ•°å ç”Ÿæˆå‡½æ•°æ•°æ®
+	template<> struct check_action<function_name>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput & in, jass_state & s)
+		{
+			std::string name = in.string();
+			auto func = s.functions.find(name);
+			if (func) {
+				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
+			} 
+			auto f = std::make_shared<function_state>();
+			func->name = name;
+			func->save_position(s.source, in.position());
+			s.functions.insert(name, func);
+		}
+	};
+
+
+
+	
 }
 
 
-#undef MSG
+#undef ERR
