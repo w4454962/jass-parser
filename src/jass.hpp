@@ -4,7 +4,8 @@
 
 #define ERR TAO_PEGTL_RAISE_MESSAGE
  
-namespace tao::pegtl::jass {
+namespace jass {
+	using namespace tao::pegtl;
 
 	struct line_char : sor<one<'\r', '\n'>, istring<'\r', '\n'>> {};
 
@@ -34,9 +35,6 @@ namespace tao::pegtl::jass {
 
 	BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, KEYWORD, KEYWORD_ALL)
 
-#undef MACRO_DEF
-#undef KEYWORD_ALL
-#undef KEYWORD
 
 
 		//#define MACRO_CONCAT(r, head, s)  (BOOST_PP_CAT(head, s))
@@ -75,6 +73,8 @@ namespace tao::pegtl::jass {
 	struct integer : seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, digits>> {};
 
 	struct name : seq<space, seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>> {};
+
+	struct type: seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>{};
 
 	struct code_name : name {};
 
@@ -133,7 +133,7 @@ namespace tao::pegtl::jass {
 	struct exp : exp_check_and {};
 
 	struct type_name: name {};
-	struct type_parent_name : name {};
+	struct type_parent_name : type {};
 	struct type_extends : if_must<key_type, space, type_name, sor<key_extends, ERR("ERROR_EXTENDS_TYPE")>, space, sor<type_parent_name, ERR("ERROR_EXTENDS_TYPE")>> {};
 
 	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, name, opt<key_array>, name, opt<seq<assign, exp>>> {};
@@ -161,19 +161,19 @@ namespace tao::pegtl::jass {
 	struct action : sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop> {};
 
 
-	struct arg_type : name {};
+	struct arg_type : type {};
 	struct arg_name: name {};
 	struct arg_statement : seq<space, arg_type, space, arg_name> {};
 	struct args_statement : seq < sor < key_nothing,  seq<arg_statement, star<seq<comma, arg_statement>> >> > {};
 	struct check_returns : sor<key_returns, if_must<key_return, ERR("ERROR_RETURN_AS_RETURNS")>> {};
 
-	struct native_statement : if_must<key_native, must<name, key_takes, args_statement, check_returns, name>> {};
+	struct native_name: name{};
+	struct returns_type: type{};
+	struct native_statement : if_must<key_native, must<space, native_name, key_takes, args_statement, check_returns, space, returns_type>> {};
 
-
+	
 	struct function_name :name {};
-	struct function_returns_type : name {};
-
-	struct function_statement : seq<key_function, must<space, function_name, key_takes, space, args_statement, check_returns, space, function_returns_type, newline>>{};
+	struct function_statement : seq<key_function, must<space, function_name, key_takes, space, args_statement, check_returns, space, returns_type, newline>>{};
 
 	struct function_block : seq<local_list, action_list> {};
 
@@ -196,6 +196,8 @@ namespace tao::pegtl::jass {
 		std::vector<object_ptr> list;
 		std::unordered_map <std::string, object_ptr> map;
 
+		object_ptr temp;
+
 		bool insert(const std::string& name, object_ptr obj) {
 			if (map.find(name) != map.end()) {
 				return false;
@@ -212,7 +214,7 @@ namespace tao::pegtl::jass {
 			return map.at(name);
 		}
 
-		object_ptr current() {
+		object_ptr back() {
 			return list.back();
 		}
 	};
@@ -280,16 +282,29 @@ namespace tao::pegtl::jass {
 		container<native_state> natives;
 		container<function_state> functions;
 
+		std::unordered_map<std::string, bool> keyword_map;
+
+
+		std::shared_ptr<arg_state> arg_temp;
+
 		jass_state() {
 			//base type
 
-			std::vector<std::string> base_list = { "integer", "real", "string", "boolean", "code", "handle" };
+			std::vector<std::string> base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing"};
 
 			for (auto& name : base_list) {
 				auto obj = std::make_shared<type_state>();
 				obj->name = name;
 				types.insert(name, obj);
+				keyword_map.emplace(name, true);
 			}
+
+
+#define MACRO_INPUT(s) keyword_map.emplace(#s, true);
+	
+			//关键字文本合集 
+			BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, MACRO_INPUT, KEYWORD_ALL)
+	
 		}
 
 		void set_source(const std::string& s) {
@@ -317,8 +332,43 @@ namespace tao::pegtl::jass {
 	struct check_action {};
 	
 
-	//解析type 子类型名 生成l===数据
-	template<> struct check_action<type_name>
+	template<> 
+	struct check_action<type_name>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s)
+		{
+			std::string name = in.string();
+
+			//使用了关键字
+			if (s.keyword_map.find(name) != s.keyword_map.end()) {
+				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+			}
+
+			auto type = s.types.find(name);
+			if (type) {
+				if (type->parent == nullptr) {
+					throw jass_parse_error(in, "ERROR_DEFINE_NATIVE_TYPE", name);
+				}
+				else {
+					throw jass_parse_error(in, "ERROR_REDEFINE_TYPE", name, *type->source, type->line);
+				}
+			}
+
+			type = std::make_shared<type_state>();
+			type->name = name;
+			type->save_position(s.source, in.position());
+			s.types.insert(name, type);
+			//定义了新的类型 该类型就被列为关键字 不能用作名字
+			s.keyword_map.emplace(name, true);
+
+		}
+	};
+
+
+
+	template<> 
+	struct check_action<type_parent_name>
 	{
 		template< typename ActionInput >
 		static void apply(const ActionInput& in, jass_state& s)
@@ -326,18 +376,135 @@ namespace tao::pegtl::jass {
 			std::string name = in.string();
 
 			auto type = s.types.find(name);
-			if (type) {
-				throw jass_parse_error(in, "ERROR_REDEFINE_TYPE", name, *type->source, type->line);
+			if (!type) {
+				throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
 			}
-	
-			type = std::make_shared<type_state>();
-			type->name = name;
-			type->save_position(s.source, in.position());
-			s.types.insert(name, type);
+			auto child = s.types.back();
+			child->parent = type;
 		}
 	};
 
-	template<> struct check_action<type_parent_name>
+
+
+
+
+	template<>
+	struct check_action<native_name>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s)
+		{
+			std::string name = in.string();
+
+			//函数名使用了关键字
+			if (s.keyword_map.find(name) != s.keyword_map.end()) {
+				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+			}
+			auto func = s.functions.find(name);
+			if (func) {
+				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
+			}
+
+			auto native = s.natives.find(name);
+			if (native) {
+				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *native->source, native->line);
+			}
+			native = std::make_shared<native_state>();
+			native->name = name;
+			native->save_position(s.source, in.position());
+			s.natives.insert(name, native);
+			s.natives.temp = native;
+			s.functions.temp = nullptr;
+		}
+	};
+
+	//解析jass函数名 生成函数数据
+	template<> 
+	struct check_action<function_name>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s)
+		{
+			std::string name = in.string();
+
+			//函数名使用了关键字
+			if (s.keyword_map.find(name) != s.keyword_map.end()) {
+				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+			}
+
+			auto native = s.natives.find(name);
+			if (native) {
+				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *native->source, native->line);
+			}
+
+			auto func = s.functions.find(name);
+			if (func) {
+				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
+			}
+			func = std::make_shared<function_state>();
+			func->name = name;
+			func->save_position(s.source, in.position());
+			s.functions.insert(name, func);
+			s.functions.temp = func;
+			s.natives.temp = nullptr;
+		}
+	};
+
+
+	template<>
+	struct check_action<arg_type>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s)
+		{
+			std::string name = in.string();
+		
+			auto type = s.types.find(name);
+			if (!type) {
+				throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
+			}
+
+			auto arg = std::make_shared<arg_state>();
+			arg->type = name;
+			arg->save_position(s.source, in.position());
+			s.arg_temp = arg;
+
+		}
+	};
+
+	template<>
+	struct check_action<arg_name>
+	{
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s)
+		{
+			std::string name = in.string();
+
+			//参数名使用了关键字
+			if (s.keyword_map.find(name) != s.keyword_map.end()) {
+				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+			}
+
+			//参数名使用了函数名字
+			auto func = s.functions.find(name);
+			if (func) {
+				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
+			}
+			auto arg = s.arg_temp;
+			arg->name = name;
+
+			if (s.functions.temp) { //属于function的参数
+				s.functions.temp->args.insert(name, arg);
+
+			} else if (s.natives.temp) { //属于native的参数
+				s.natives.temp->args.insert(name, arg);
+			}
+		}
+	};
+
+
+	template<>
+	struct check_action<returns_type>
 	{
 		template< typename ActionInput >
 		static void apply(const ActionInput& in, jass_state& s)
@@ -349,35 +516,21 @@ namespace tao::pegtl::jass {
 				throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
 			}
 
-			auto child = s.types.current();
-			child->parent = type;
+			if (s.functions.temp) { //属于function的
+				s.functions.temp->returns_type = name;
+			} else if (s.natives.temp) { //属于native的
+				s.natives.temp->returns_type = name;
+			}
+			
 		}
 	};
 
-
-
-	//解析jass函数名 生成函数数据
-	template<> struct check_action<function_name>
-	{
-		template< typename ActionInput >
-		static void apply(const ActionInput & in, jass_state & s)
-		{
-			std::string name = in.string();
-			auto func = s.functions.find(name);
-			if (func) {
-				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
-			} 
-			auto f = std::make_shared<function_state>();
-			func->name = name;
-			func->save_position(s.source, in.position());
-			s.functions.insert(name, func);
-		}
-	};
-
-
-
-	
 }
 
 
 #undef ERR
+
+#undef MACRO_DEF
+#undef KEYWORD_ALL
+#undef KEYWORD
+#undef MACRO_INPUT

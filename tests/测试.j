@@ -1,7 +1,16 @@
-type loli extends handle
 
-type asd extends loli
+type xa extends handle 
 
 
-type  
+function aaa takes handle h returns xa
+
+endfunction 
+
+native ssss takes xa a returns  
+    
+
+function bbb takes handle h, handle xx returns nothing
+
+endfunction 
+
 
