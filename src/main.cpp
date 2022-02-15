@@ -61,13 +61,23 @@ bool tests(const fs::path& tests_path) {
 		try {
 			std::string str;
 
+			//jass::jass_state state;
+
+			//state.set_source(path.string());
+
 			jass::jass_state state;
 
-			state.set_source(path.string());
+			const auto root = parse_tree::parse<jass::grammar, jass::selector, nothing>(in, state);
 
-			const auto ret = parse<jass::grammar, jass::check_action>(in, state);
+			parse_tree::print_dot(std::cout, *root);
+
+			for (auto&& [k, v] : state.types) {
+				std::cout << "types:" << k << v->string_view();
+			}
+			
+			//const auto ret = parse<jass::grammar, jass::check_action>(in, state);
 	
-			std::cout << path << ":" << ret << std::endl;
+			//std::cout << path << ":" << ret << std::endl;
 		
 		}
 		catch (const jass::jass_parse_error& e) {

@@ -1,16 +1,18 @@
 
-type xa extends handle 
+type aa extends integer 
+
+type bb extends aa
 
 
-function aaa takes handle h returns xa
-
-endfunction 
-
-native ssss takes xa a returns  
-    
-
-function bbb takes handle h, handle xx returns nothing
-
-endfunction 
+//globals
+//    integer a 
+//    integer array b 
+//
+//endglobals
+//
+//
+//function bbb takes handle h, handle xx returns nothing
+//
+//endfunction 
 
 

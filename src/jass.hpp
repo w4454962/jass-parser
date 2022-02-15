@@ -174,7 +174,6 @@ namespace jass {
 	
 	struct function_name :name {};
 	struct function_statement : seq<key_function, must<space, function_name, key_takes, space, args_statement, check_returns, space, returns_type, newline>>{};
-
 	struct function_block : seq<local_list, action_list> {};
 
 	struct function : if_must<function_statement, function_block, key_endfunction> {};
@@ -196,7 +195,7 @@ namespace jass {
 		std::vector<object_ptr> list;
 		std::unordered_map <std::string, object_ptr> map;
 
-		object_ptr temp;
+		object_ptr current;
 
 		bool insert(const std::string& name, object_ptr obj) {
 			if (map.find(name) != map.end()) {
@@ -219,99 +218,107 @@ namespace jass {
 		}
 	};
 
-	struct state_base {
-		std::shared_ptr<std::string> source;
-		size_t line;
-		size_t column;
-
-		void save_position(std::shared_ptr<std::string> s, const position& p) {
-			source = s;
-			line = p.line;
-			column = p.column;
-		}
-	};
-
-	struct type_state : state_base {
-		data_type name;
-		std::shared_ptr<type_state> parent;
-	};
-
-	struct local_state : state_base {
-		data_type type;
-		data_type name;
-
-		bool is_array;
-	};
-	struct global_state : state_base {
-		data_type type;
-		data_type name;
-		
-		bool is_array;
-	};
-
-	struct arg_state : state_base {
-		data_type type;
-		data_type name;
-	};
-
-	struct function_state : state_base
-	{
-		data_type name;
-
-		container<arg_state> args;
-		data_type returns_type;
-
-		container<local_state> locals;
-	};
-
-	struct native_state : state_base
-	{
-		data_type name;
-
-		container<arg_state> args;
-		data_type returns_type;
-	};
+	//struct state_base {
+	//	std::shared_ptr<std::string> source;
+	//	size_t line;
+	//	size_t column;
+	//
+	//	void save_position(std::shared_ptr<std::string> s, const position& p) {
+	//		source = s;
+	//		line = p.line;
+	//		column = p.column;
+	//	}
+	//};
+	//
+	//struct exp_state : state_base {
+	//
+	//};
+	//
+	//struct type_state : state_base {
+	//	data_type name;
+	//	std::shared_ptr<type_state> parent;
+	//};
+	//
+	//struct local_state : state_base {
+	//	data_type type;
+	//	data_type name;
+	//
+	//	bool is_array;
+	//};
+	//
+	//struct global_state : state_base {
+	//	data_type type;
+	//	data_type name;
+	//	std::shared_ptr<exp_state> value;
+	//	bool is_array;
+	//	bool is_const;
+	//};
+	//
+	//struct arg_state : state_base {
+	//	data_type type;
+	//	data_type name;
+	//};
+	//
+	//struct function_state : state_base
+	//{
+	//	data_type name;
+	//
+	//	container<arg_state> args;
+	//	data_type returns_type;
+	//
+	//	container<local_state> locals;
+	//};
+	//
+	//struct native_state : state_base
+	//{
+	//	data_type name;
+	//
+	//	container<arg_state> args;
+	//	data_type returns_type;
+	//};
 
 	 
-	struct jass_state
-	{
-		std::shared_ptr<std::string> source;
+//	struct jass_state
+//	{
+//		std::shared_ptr<std::string> source;
+//
+//		container<type_state> types;
+//		container<global_state> globals;
+//		container<native_state> natives;
+//		container<function_state> functions;
+//
+//		std::unordered_map<std::string, bool> keyword_map;
+//
+//
+//		std::shared_ptr<arg_state> arg_current;
+//
+//		jass_state() {
+//			//base type
+//
+//			std::vector<std::string> base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing"};
+//
+//			for (auto& name : base_list) {
+//				auto obj = std::make_shared<type_state>();
+//				obj->name = name;
+//				types.insert(name, obj);
+//				keyword_map.emplace(name, true);
+//			}
+//
+//
+//#define MACRO_INPUT(s) keyword_map.emplace(#s, true);
+//	
+//			//关键字文本合集 
+//			BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, MACRO_INPUT, KEYWORD_ALL)
+//	
+//		}
+//
+//		void set_source(const std::string& s) {
+//			source = std::make_shared<std::string>(s);
+//		}
+//
+//	};
 
-		container<type_state> types;
-		container<global_state> globals;
-		container<native_state> natives;
-		container<function_state> functions;
 
-		std::unordered_map<std::string, bool> keyword_map;
-
-
-		std::shared_ptr<arg_state> arg_temp;
-
-		jass_state() {
-			//base type
-
-			std::vector<std::string> base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing"};
-
-			for (auto& name : base_list) {
-				auto obj = std::make_shared<type_state>();
-				obj->name = name;
-				types.insert(name, obj);
-				keyword_map.emplace(name, true);
-			}
-
-
-#define MACRO_INPUT(s) keyword_map.emplace(#s, true);
-	
-			//关键字文本合集 
-			BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, MACRO_INPUT, KEYWORD_ALL)
-	
-		}
-
-		void set_source(const std::string& s) {
-			source = std::make_shared<std::string>(s);
-		}
-
-	};
 
 
 	template<typename... Args>
@@ -328,203 +335,230 @@ namespace jass {
 		{ }
 	};
 
-	template< typename Rule >
-	struct check_action {};
 	
 
-	template<> 
-	struct check_action<type_name>
+	struct jass_state
 	{
-		template< typename ActionInput >
-		static void apply(const ActionInput& in, jass_state& s)
-		{
-			std::string name = in.string();
-
-			//使用了关键字
-			if (s.keyword_map.find(name) != s.keyword_map.end()) {
-				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
-			}
-
-			auto type = s.types.find(name);
-			if (type) {
-				if (type->parent == nullptr) {
-					throw jass_parse_error(in, "ERROR_DEFINE_NATIVE_TYPE", name);
-				}
-				else {
-					throw jass_parse_error(in, "ERROR_REDEFINE_TYPE", name, *type->source, type->line);
-				}
-			}
-
-			type = std::make_shared<type_state>();
-			type->name = name;
-			type->save_position(s.source, in.position());
-			s.types.insert(name, type);
-			//定义了新的类型 该类型就被列为关键字 不能用作名字
-			s.keyword_map.emplace(name, true);
-
-		}
+		std::unordered_map<std::string_view, std::shared_ptr<parse_tree::node>> types;
 	};
 
-
-
-	template<> 
-	struct check_action<type_parent_name>
+	// some nodes don't need to store their content
+	struct type_extends_content
+		: parse_tree::apply< type_extends_content >
 	{
-		template< typename ActionInput >
-		static void apply(const ActionInput& in, jass_state& s)
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<parse_tree::node>& n, jass_state& s)
 		{
-			std::string name = in.string();
-
-			auto type = s.types.find(name);
-			if (!type) {
-				throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
-			}
-			auto child = s.types.back();
-			child->parent = type;
-		}
-	};
-
-
-
-
-
-	template<>
-	struct check_action<native_name>
-	{
-		template< typename ActionInput >
-		static void apply(const ActionInput& in, jass_state& s)
-		{
-			std::string name = in.string();
-
-			//函数名使用了关键字
-			if (s.keyword_map.find(name) != s.keyword_map.end()) {
-				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
-			}
-			auto func = s.functions.find(name);
-			if (func) {
-				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
-			}
-
-			auto native = s.natives.find(name);
-			if (native) {
-				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *native->source, native->line);
-			}
-			native = std::make_shared<native_state>();
-			native->name = name;
-			native->save_position(s.source, in.position());
-			s.natives.insert(name, native);
-			s.natives.temp = native;
-			s.functions.temp = nullptr;
-		}
-	};
-
-	//解析jass函数名 生成函数数据
-	template<> 
-	struct check_action<function_name>
-	{
-		template< typename ActionInput >
-		static void apply(const ActionInput& in, jass_state& s)
-		{
-			std::string name = in.string();
-
-			//函数名使用了关键字
-			if (s.keyword_map.find(name) != s.keyword_map.end()) {
-				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
-			}
-
-			auto native = s.natives.find(name);
-			if (native) {
-				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *native->source, native->line);
-			}
-
-			auto func = s.functions.find(name);
-			if (func) {
-				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
-			}
-			func = std::make_shared<function_state>();
-			func->name = name;
-			func->save_position(s.source, in.position());
-			s.functions.insert(name, func);
-			s.functions.temp = func;
-			s.natives.temp = nullptr;
-		}
-	};
-
-
-	template<>
-	struct check_action<arg_type>
-	{
-		template< typename ActionInput >
-		static void apply(const ActionInput& in, jass_state& s)
-		{
-			std::string name = in.string();
-		
-			auto type = s.types.find(name);
-			if (!type) {
-				throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
-			}
-
-			auto arg = std::make_shared<arg_state>();
-			arg->type = name;
-			arg->save_position(s.source, in.position());
-			s.arg_temp = arg;
-
-		}
-	};
-
-	template<>
-	struct check_action<arg_name>
-	{
-		template< typename ActionInput >
-		static void apply(const ActionInput& in, jass_state& s)
-		{
-			std::string name = in.string();
-
-			//参数名使用了关键字
-			if (s.keyword_map.find(name) != s.keyword_map.end()) {
-				throw jass_parse_error(in, "ERROR_KEY_WORD", name);
-			}
-
-			//参数名使用了函数名字
-			auto func = s.functions.find(name);
-			if (func) {
-				throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
-			}
-			auto arg = s.arg_temp;
-			arg->name = name;
-
-			if (s.functions.temp) { //属于function的参数
-				s.functions.temp->args.insert(name, arg);
-
-			} else if (s.natives.temp) { //属于native的参数
-				s.natives.temp->args.insert(name, arg);
-			}
-		}
-	};
-
-
-	template<>
-	struct check_action<returns_type>
-	{
-		template< typename ActionInput >
-		static void apply(const ActionInput& in, jass_state& s)
-		{
-			std::string name = in.string();
-
-			auto type = s.types.find(name);
-			if (!type) {
-				throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
-			}
-
-			if (s.functions.temp) { //属于function的
-				s.functions.temp->returns_type = name;
-			} else if (s.natives.temp) { //属于native的
-				s.natives.temp->returns_type = name;
-			}
 			
+
+			
+			std::cout << "node :" << n->string_view() << std::endl;
+			std::cout << "name:" << n->children[0]->string_view() << ", type:" << n->children[1]->string_view() << std::endl;
+			
+			//s.types.emplace(n->children[0]->string_view(), std::move(n));
+
+			//throw jass_parse_error(in, "ERROR_KEY_WORD", n->children[0]->string_view());
 		}
 	};
 
+	template<typename Rule>
+	using selector = parse_tree::selector<
+		Rule,
+
+		type_extends_content::on<type_extends>,
+		parse_tree::store_content::on<
+			type_name,
+			type_parent_name
+		>
+
+		//parse_tree::store_content::on<
+		//	function_name,
+		//	returns_type
+		//>
+	>;
+
+
+	//template< typename Rule >
+	//struct check_action {};
+	//
+	//
+	//template<> 
+	//struct check_action<type_name> {
+	//	template< typename ActionInput >
+	//	static void apply(const ActionInput& in, jass_state& s) {
+	//		std::string name = in.string();
+	//
+	//		//使用了关键字
+	//		if (s.keyword_map.find(name) != s.keyword_map.end()) {
+	//			throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+	//		}
+	//
+	//		auto type = s.types.find(name);
+	//		if (type) {
+	//			if (type->parent == nullptr) {
+	//				throw jass_parse_error(in, "ERROR_DEFINE_NATIVE_TYPE", name);
+	//			}
+	//			else {
+	//				throw jass_parse_error(in, "ERROR_REDEFINE_TYPE", name, *type->source, type->line);
+	//			}
+	//		}
+	//
+	//		type = std::make_shared<type_state>();
+	//		type->name = name;
+	//		type->save_position(s.source, in.position());
+	//		s.types.insert(name, type);
+	//		//定义了新的类型 该类型就被列为关键字 不能用作名字
+	//		s.keyword_map.emplace(name, true);
+	//
+	//	}
+	//};
+	//
+	//
+	//template<> 
+	//struct check_action<type_parent_name> {
+	//	template< typename ActionInput >
+	//	static void apply(const ActionInput& in, jass_state& s) {
+	//		std::string name = in.string();
+	//
+	//		auto type = s.types.find(name);
+	//		if (!type) {
+	//			throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
+	//		}
+	//		auto child = s.types.back();
+	//		child->parent = type;
+	//	}
+	//};
+	//
+	//
+	//template<>
+	//struct check_action<native_name> {
+	//	template< typename ActionInput >
+	//	static void apply(const ActionInput& in, jass_state& s) {
+	//		std::string name = in.string();
+	//
+	//		//函数名使用了关键字
+	//		if (s.keyword_map.find(name) != s.keyword_map.end()) {
+	//			throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+	//		}
+	//		auto func = s.functions.find(name);
+	//		if (func) {
+	//			throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
+	//		}
+	//
+	//		auto native = s.natives.find(name);
+	//		if (native) {
+	//			throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *native->source, native->line);
+	//		}
+	//		native = std::make_shared<native_state>();
+	//		native->name = name;
+	//		native->save_position(s.source, in.position());
+	//		s.natives.insert(name, native);
+	//		s.natives.current = native;
+	//		s.functions.current = nullptr;
+	//	}
+	//};
+	//
+	////解析jass函数名 生成函数数据
+	//template<> 
+	//struct check_action<function_name> {
+	//	template< typename ActionInput >
+	//	static void apply(const ActionInput& in, jass_state& s) {
+	//		std::string name = in.string();
+	//
+	//		//函数名使用了关键字
+	//		if (s.keyword_map.find(name) != s.keyword_map.end()) {
+	//			throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+	//		}
+	//
+	//		auto native = s.natives.find(name);
+	//		if (native) {
+	//			throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *native->source, native->line);
+	//		}
+	//
+	//		auto func = s.functions.find(name);
+	//		if (func) {
+	//			throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
+	//		}
+	//		func = std::make_shared<function_state>();
+	//		func->name = name;
+	//		func->save_position(s.source, in.position());
+	//		s.functions.insert(name, func);
+	//		s.functions.current = func;
+	//		s.natives.current = nullptr;
+	//	}
+	//};
+	//
+	//
+	//template<>
+	//struct check_action<arg_type> {
+	//	template< typename ActionInput >
+	//	static void apply(const ActionInput& in, jass_state& s) {
+	//		std::string name = in.string();
+	//	
+	//		auto type = s.types.find(name);
+	//		if (!type) {
+	//			throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
+	//		}
+	//
+	//		auto arg = std::make_shared<arg_state>();
+	//		arg->type = name;
+	//		arg->save_position(s.source, in.position());
+	//		s.arg_current = arg;
+	//
+	//	}
+	//};
+	//
+	//template<>
+	//struct check_action<arg_name> {
+	//	template< typename ActionInput >
+	//	static void apply(const ActionInput& in, jass_state& s) {
+	//		std::string name = in.string();
+	//
+	//		//参数名使用了关键字
+	//		if (s.keyword_map.find(name) != s.keyword_map.end()) {
+	//			throw jass_parse_error(in, "ERROR_KEY_WORD", name);
+	//		}
+	//
+	//		//参数名使用了函数名字
+	//		auto func = s.functions.find(name);
+	//		if (func) {
+	//			throw jass_parse_error(in, "ERROR_REDEFINE_FUNCTION", name, *func->source, func->line);
+	//		}
+	//		auto arg = s.arg_current;
+	//		arg->name = name;
+	//
+	//		if (s.functions.current) { //属于function的参数
+	//			s.functions.current->args.insert(name, arg);
+	//
+	//		} else if (s.natives.current) { //属于native的参数
+	//			s.natives.current->args.insert(name, arg);
+	//		}
+	//	}
+	//};
+	//
+	//
+	//template<>
+	//struct check_action<returns_type> {
+	//
+	//	template< typename ActionInput >
+	//	static void apply(const ActionInput& in, jass_state& s) {
+	//		std::string name = in.string();
+	//
+	//		auto type = s.types.find(name);
+	//		if (!type) {
+	//			throw jass_parse_error(in, "ERROR_UNDEFINE_TYPE", name);
+	//		}
+	//
+	//		if (s.functions.current) { //属于function的
+	//			s.functions.current->returns_type = name;
+	//		} else if (s.natives.current) { //属于native的
+	//			s.natives.current->returns_type = name;
+	//		}
+	//	}
+	//};
+
+
+	
 }
 
 
