@@ -72,9 +72,8 @@ namespace jass {
 	struct integer8 : if_must<istring<'0'>, plus<odigit>> {};
 	struct integer : seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, digits>> {};
 
-	struct name : seq<space, seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>> {};
 
-	struct type: seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>{};
+	struct name : seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>{};
 
 	struct code_name : name {};
 
@@ -106,11 +105,11 @@ namespace jass {
 	struct exp_unit;
 
 	struct exp_neg : seq<space, sub, exp_unit> {};
-	struct exp_var : seq<name, opt<seq<bl, exp, br>>> {};
+	struct exp_var : seq<space, name, opt<seq<bl, exp, br>>> {};
 	struct exp_value : sor<value, exp_var> {};
 	struct exp_call_args : seq<exp, star<seq<comma, exp>>> {};
-	struct exp_call : seq<name, pl, opt<exp_call_args>, pr> {};
-	struct exp_code : seq<key_function, name, pl, opt<exp_call_args>, pr> {};
+	struct exp_call : seq<space, name, pl, opt<exp_call_args>, pr> {};
+	struct exp_code : seq<key_function, space, name, pl, opt<exp_call_args>, pr> {};
 	struct exp_paren : seq<pl, exp, pr> {};
 	struct exp_unit : sor<exp_paren, exp_code, exp_call, exp_value, exp_neg> {};
 
@@ -124,23 +123,23 @@ namespace jass {
 	struct exp_or : key_or {};
 	struct exp_and : key_and {};
 
-	struct exp_check_mul : seq<exp_unit, star<seq<space, exp_mul_div, exp_unit>>> {};
-	struct exp_check_add : seq<exp_check_mul, star<seq<space, exp_add_sub, exp_check_mul>>> {};
-	struct exp_check_not : seq<space, star<exp_not>, exp_check_add> {};
+	struct exp_check_mul_div : seq<exp_unit, star<seq<space, exp_mul_div, exp_unit>>> {};
+	struct exp_check_add_sub : seq<exp_check_mul_div, star<seq<space, exp_add_sub, exp_check_mul_div>>> {};
+	struct exp_check_not : seq<space, star<exp_not>, exp_check_add_sub> {};
 	struct exp_check_compare : seq<exp_check_not, star<seq<space, exp_compare_operator, exp_check_not>>> {};
 	struct exp_check_or : seq<exp_check_compare, star<seq<space, exp_or, exp_check_compare>>> {};
 	struct exp_check_and : seq<exp_check_or, star<seq<space, exp_and, exp_check_or>>> {};
 	struct exp : exp_check_and {};
 
 	struct type_name: name {};
-	struct type_parent_name : type {};
+	struct type_parent_name : name {};
 	struct type_extends : if_must<key_type, space, type_name, sor<key_extends, ERR("ERROR_EXTENDS_TYPE")>, space, sor<type_parent_name, ERR("ERROR_EXTENDS_TYPE")>> {};
 
-	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, name, opt<key_array>, name, opt<seq<assign, exp>>> {};
+	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, space, name, opt<key_array>, space, name, opt<seq<assign, exp>>> {};
 	struct globals : if_must<key_globals, must<newline, star<sor<global, newline>>, key_endglobals>> {};
 
 	struct local_name:name {};
-	struct local_type:type {};
+	struct local_type:name {};
 	struct local : if_must<key_local, space, local_type ,opt<key_array>, space, local_name, opt<seq<assign, exp>>> {};
 	struct local_list : star<sor<local, newline>> {};
 
@@ -163,14 +162,14 @@ namespace jass {
 	struct action : sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop> {};
 
 
-	struct arg_type : type {};
+	struct arg_type : name {};
 	struct arg_name: name {};
 	struct arg_statement : seq<space, arg_type, space, arg_name> {};
 	struct args_statement : seq < sor < key_nothing,  seq<arg_statement, star<seq<comma, arg_statement>> >> > {};
 	struct check_returns : sor<key_returns, if_must<key_return, ERR("ERROR_RETURN_AS_RETURNS")>> {};
 
 	struct native_name: name{};
-	struct returns_type: type{};
+	struct returns_type: name {};
 	struct native_statement : if_must<key_native, must<space, native_name, key_takes, args_statement, check_returns, space, returns_type>> {};
 
 	
@@ -242,8 +241,14 @@ namespace jass {
 		}
 	};
 	
+	struct value_state : state_base {
+		data_type value_type;
+
+	};
+
 	struct exp_state : state_base {
-	
+		data_type value_type;
+
 	};
 	
 	struct type_state : state_base {
@@ -256,6 +261,7 @@ namespace jass {
 		data_type name;
 	
 		bool is_array;
+		bool is_init;
 	};
 	
 	struct global_state : state_base {
@@ -296,8 +302,17 @@ namespace jass {
 		container<native_state> natives;
 		container<function_state> functions;
 
+		std::unordered_map<jass_node*, std::shared_ptr<exp_state>> exp_map;
 		std::unordered_map<std::string_view, bool> keyword_map;
 
+
+		std::shared_ptr<exp_state> make_exp_state(const std::unique_ptr<jass_node>& n) {
+			if (exp_map.find(n.get()) == exp_map.end()) {
+				auto es = std::make_shared<exp_state>();
+				es->save_node(n);
+			}
+			return exp_map.at(n.get());
+		}
 
 		bool is_keyword(const std::string_view& str) {
 			return keyword_map.find(str) != keyword_map.end();
@@ -473,8 +488,8 @@ namespace jass {
 
 			auto ls = std::make_shared<local_state>();
 			ls->is_array = false;
+			ls->is_init = false;
 			ls->save_node(n);
-			
 			
 			auto size = n->children.size();
 
@@ -523,17 +538,49 @@ namespace jass {
 				if (n->children[1]->is_type<key_array>()) { 
 					ls->is_array = true;
 					ls->name = check_name(2);
-					
+
 				} else {
 					ls->name = check_name(1);
 					exp = n->children[2].get();
+
+					//std::cout << "type : " << ls->type << " s: " << exp->type << std::endl;
+
+					parse_tree::print_dot(std::cout, *(parse_tree::node*)exp);
 				}
 			}
-			
 			fs->locals.save(ls->name, ls);
-
 		}
 	};
+
+	struct exp_content
+		: parse_tree::apply< exp_content >
+	{
+
+		static std::string_view get_node_type(std::unique_ptr<jass_node>& node) {
+
+		}
+
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			if (n->children.size() == 1) { //没有操作符的匹配
+				n = std::move(n->children.front());
+				return;
+			}
+
+			for (size_t i = 1; i < n->children.size(); i += 2) {
+				auto& first = n->children[i - 1];
+				auto& op = n->children[i];
+				auto& second = n->children[i + 1];
+			}
+				
+		
+			//std::cout << "type " << n->type << " " << n->string_view() << " size " << n->children.size() << std::endl;
+		}
+	};
+
+
+
 
 	template<typename Rule>
 	using selector = parse_tree::selector<
@@ -563,8 +610,21 @@ namespace jass {
 			local_name,
 			key_array,
 			exp
-		>
+		>,
+
+
+		exp_content::on<
+			exp_check_and,
+			exp_check_or,
+			exp_check_compare,
+			exp_check_add_sub,
+			exp_check_mul_div
+		>,
 	
+		parse_tree::store_content::on<
+			add, sub, mul, div, mod,
+			value
+		>
 	>;
 
 	
