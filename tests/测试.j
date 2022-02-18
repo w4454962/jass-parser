@@ -1,7 +1,16 @@
 
-type aa extends integer 
+type aaa extends integer 
 
-type bb extends aa
+type abc extends aaa
+
+
+native test2 takes handle a, handle aa returns aaa 
+
+function test takes handle aa, handle ab returns aaa 
+    local boolean bb
+    local boolean array bb
+
+endfunction
 
 
 //globals

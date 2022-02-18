@@ -72,9 +72,9 @@ bool tests(const fs::path& tests_path) {
 
 			//parse_tree::print_dot(std::cout, *root);
 
-			for (auto&& [k, v] : state.types) {
-				std::cout << "types:" << k << v->string_view();
-			}
+			//for (auto&& [k, v] : state.types) {
+			//	std::cout << "types:" << k << v->string_view();
+			//}
 			
 			//const auto ret = parse<jass::grammar, jass::check_action>(in, state);
 	
