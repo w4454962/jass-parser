@@ -58,6 +58,7 @@ bool tests(const fs::path& tests_path) {
 		
 		tao::pegtl::file_input in(path);
 
+		
 		try {
 			std::string str;
 
@@ -66,10 +67,10 @@ bool tests(const fs::path& tests_path) {
 			//state.set_source(path.string());
 
 			jass::jass_state state;
+			
+			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, nothing>(in, state);
 
-			const auto root = parse_tree::parse<jass::grammar, jass::selector, nothing>(in, state);
-
-			parse_tree::print_dot(std::cout, *root);
+			//parse_tree::print_dot(std::cout, *root);
 
 			for (auto&& [k, v] : state.types) {
 				std::cout << "types:" << k << v->string_view();

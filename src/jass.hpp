@@ -335,27 +335,71 @@ namespace jass {
 		{ }
 	};
 
-	
+	struct jass_node : 
+		parse_tree::basic_node<jass_node>
+	{
+
+	};
 
 	struct jass_state
 	{
-		std::unordered_map<std::string_view, std::shared_ptr<parse_tree::node>> types;
+		std::unordered_map<std::string_view, jass_node*> types;
+
+		std::unordered_map<std::string_view, bool> keyword_map;
+
+		bool is_keyword(const std::string_view& str) {
+			return keyword_map.find(str) != keyword_map.end();
+		}
+
+		jass_state() {
+
+			auto base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing" };
+			for (auto name : base_list) {
+				
+				types.emplace(name, new jass_node());
+				keyword_map.emplace(name, true);
+			}
+
+#define MACRO_INPUT(s) keyword_map.emplace(#s, true);
+			BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, MACRO_INPUT, KEYWORD_ALL)
+#undef MACRO_INPUT
+
+		}
 	};
 
+
+	
 	// some nodes don't need to store their content
 	struct type_extends_content
 		: parse_tree::apply< type_extends_content >
 	{
 		template<typename ParseInput>
-		static void transform(const ParseInput& in, std::unique_ptr<parse_tree::node>& n, jass_state& s)
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
-			
 
+			//auto& name_node = n->children[0];
+			//auto name = name_node->string_view();
+			//
+			////名字是关键字
+			//if (s.is_keyword(name)){
+			//	auto input = name_node->as_memory_input();
+			//	throw jass_parse_error(input, "ERROR_KEY_WORD", name);
+			//}
+			//
+			//auto& type_node = n->children[1];
+			//auto type = type_node->string_view();
+			//
+			////类型未定义
+			//if (s.types.find(type) == s.types.end()) {
+			//	auto input = type_node->as_memory_input();
+			//	throw jass_parse_error(input, "ERROR_UNDEFINE_TYPE", type);
+			//}
+			//s.types.emplace(name, name_node);
 			
-			std::cout << "node :" << n->string_view() << std::endl;
-			std::cout << "name:" << n->children[0]->string_view() << ", type:" << n->children[1]->string_view() << std::endl;
+			//std::cout << "node :" << n->string_view() << std::endl;
+			//std::cout << "name:" << n->children[0]->string_view() << ", type:" << n->children[1]->string_view() << std::endl;
 			
-			//s.types.emplace(n->children[0]->string_view(), std::move(n));
+			//s.types.emplace(n->children[0]->string_view(), n.get());
 
 			//throw jass_parse_error(in, "ERROR_KEY_WORD", n->children[0]->string_view());
 		}
