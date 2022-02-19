@@ -20,12 +20,14 @@ std::string_view convert_message(std::string_view msg) {
 
 
 template<typename... Args>
-void output_error(const position& p, std::string_view line, std::string_view msg, Args... args) {
+void output_error(const position& p, size_t width, std::string_view line, std::string_view msg, Args... args) {
 
 	std::string err = jass::error_format(msg, args...);
 
 	std::vector<char> of(p.column -1, ' ');
-	std::string code = std::format("{}\n{}^", line, std::string(of.begin(), of.end()));
+	std::vector<char> tip(width, '^');
+
+	std::string code = std::format("{}\n{}{}", line, std::string(of.begin(), of.end()), std::string(tip.begin(), tip.end()));
 	std::string error = jass::error_format("ERROR_POS", err, p.source, p.line, code);
 
 	std::cout << error << std::endl;
@@ -69,12 +71,12 @@ bool tests(const fs::path& tests_path) {
 			
 			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
 
-
 		}
 		catch (const jass::jass_parse_error& e) {
 			const auto p = e.positions().front();
 
-			output_error(p, jass::line_at(in, p), e.message());
+			
+			output_error(p, e.width, jass::line_at(in, p), e.message());
 
 			i++;
 			if (i > 1) {
@@ -83,7 +85,7 @@ bool tests(const fs::path& tests_path) {
 		} catch(const tao::pegtl::parse_error& e) {
 			const auto p = e.positions().front();
 
-			output_error(p, jass::line_at(in, p), e.message());
+			output_error(p, 1, jass::line_at(in, p), e.message());
 
 			i++;
 			if (i > 1) {

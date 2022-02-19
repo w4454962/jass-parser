@@ -300,6 +300,7 @@ namespace jass {
 
 		bool is_function_block = false;
 		bool is_local_block = false;
+		bool is_action_set = false;
 
 		std::unordered_map<std::string_view, bool> keyword_map;
 
@@ -396,9 +397,12 @@ namespace jass {
 	class jass_parse_error :public parse_error
 	{
 	public:
+		size_t width;
+
 		template<typename ParseInput, typename... Args>
 		jass_parse_error(const ParseInput& in, const std::string_view& msg, Args... args)
-			: parse_error(error_format(msg, args...), in)
+			: parse_error(error_format(msg, args...), in),
+			width(in.end() - in.begin())
 		{ }
 
 	};
@@ -631,12 +635,16 @@ namespace jass {
 		: parse_tree::apply< exp_content >
 	{
 		
+		typedef std::unique_ptr<jass_node> node_ptr;
 
 
-
-		static std::string_view check_exp_type(std::unique_ptr<jass_node>& first, std::unique_ptr<jass_node>& op, std::unique_ptr<jass_node>& second, jass_state& s) {
+		static std::string_view check_exp_type(node_ptr& n, jass_state& s, node_ptr& first, node_ptr& op, node_ptr& second) {
 			std::string str = op->string();
-			uint32_t byte = *(uint32_t*)(str.c_str());
+			uint32_t byte = 0;
+	
+			for (auto it = str.begin(); it != str.end(); it++) {
+				byte = (byte << 8) | *it;
+			}
 
 			std::string_view t1 = first->exp_value_type, t2 = second->exp_value_type;
 			std::string_view exp_type = "nothing";
@@ -650,27 +658,27 @@ namespace jass {
 					exp_type = get_string_connect(t1, t2);
 				}
 				if (exp_type.empty()) {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_ADD", t1, t2);
+					throw jass_parse_error(n->as_memory_input(), "ERROR_ADD", t1, t2);
 				}
 				break;
 			case '-':
 				exp_type = get_match_exp_type(t1, t2); 
 				if (exp_type.empty()) {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_SUB", t1, t2);
+					throw jass_parse_error(n->as_memory_input(), "ERROR_SUB", t1, t2);
 				}
 				break;
 
 			case '*':
 				exp_type = get_match_exp_type(t1, t2);
 				if (exp_type.empty()) {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_MUL", t1, t2);
+					throw jass_parse_error(n->as_memory_input(), "ERROR_MUL", t1, t2);
 				}
 				break;
 
 			case '/':
 				exp_type = get_match_exp_type(t1, t2);
 				if (exp_type.empty()) {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_DIV", t1, t2);
+					throw jass_parse_error(n->as_memory_input(), "ERROR_DIV", t1, t2);
 				}
 				break;
 
@@ -679,20 +687,20 @@ namespace jass {
 				if (t1 == demangle<integer>() && t2 == demangle<integer>()) {
 					exp_type = t1;
 				} else {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_MOD");
+					throw jass_parse_error(n->as_memory_input(), "ERROR_MOD");
 				}
 				break;
 
 			case '==':
 			case '!=':
-				if (t1 == demangle<null>() && t2 == demangle<null>()) {
+				if (t1 == demangle<null>() || t2 == demangle<null>()) {
 					exp_type = demangle<boolean>();
 				} else if (!get_match_exp_type(t1, t2).empty()) {
 					exp_type = demangle<boolean>();
 				} else if (s.get_base_type(t1) == s.get_base_type(t2)) {
 					exp_type = demangle<boolean>();
 				} else {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_EQUAL", t1, t2);
+					throw jass_parse_error(n->as_memory_input(), "ERROR_EQUAL", t1, t2);
 				}
 				break;
 
@@ -700,23 +708,26 @@ namespace jass {
 			case '<':
 			case '>=':
 			case '<=':
+				
 				if (!get_match_exp_type(t1, t2).empty()) {
 					exp_type = demangle<boolean>();
 				} else {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_COMPARE", t1, t2);
+					throw jass_parse_error(n->as_memory_input(), "ERROR_COMPARE", t1, t2);
 				}
 				break;
 			case 'and':
 			case 'or':
-
+			
 				if (t1 == demangle<boolean>() && t2 == demangle<boolean>()) {
 					exp_type = demangle<boolean>();
-				} else {
-					throw jass_parse_error(op->as_memory_input(), "ERROR_AND", t1, t2);
+				} else if (byte == 'and') {
+					throw jass_parse_error(n->as_memory_input(), "ERROR_AND", t1, t2);
+				} else if (byte == 'or') {
+					throw jass_parse_error(n->as_memory_input(), "ERROR_OR", t1, t2);
 				}
 				break;
 			default:
-				throw jass_parse_error(op->as_memory_input(), "UNKNOWN_EXP");
+				throw jass_parse_error(n->as_memory_input(), "UNKNOWN_EXP");
 				break;
 			}
 			return exp_type;
@@ -734,8 +745,8 @@ namespace jass {
 				auto& first = n->children[i - 1];
 				auto& op = n->children[i];
 				auto& second = n->children[i + 1];
-	
-				n->exp_value_type = check_exp_type(first, op, second, s);
+	 
+				n->exp_value_type = check_exp_type(n, s, first, op, second);
 			}
 			
 			//std::cout << "type " << n->type << " " << n->string_view() << " size " << n->children.size()  << " " << n->exp_value_type << std::endl;
@@ -769,12 +780,12 @@ namespace jass {
 
 				if (auto as = fs->args.find(name); as) {
 					if (has_index) { //参数不需要索引
-						throw jass_parse_error(n->as_sub_input(1), "ERROR_WASTE_INDEX", name);
+						throw jass_parse_error(n->as_memory_input(), "ERROR_WASTE_INDEX", name);
 					}
 					n->exp_value_type = as->type;
 				} else if (auto ls = fs->locals.find(name); ls) {
 					if (has_index && !ls->is_array) { //局部变量不需要索引
-						throw jass_parse_error(n->as_sub_input(1), "ERROR_WASTE_INDEX", name);
+						throw jass_parse_error(n->as_memory_input(), "ERROR_WASTE_INDEX", name);
 					}else if (!has_index && ls->is_array) { //局部数组缺少索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_NO_INDEX", name);
 					}else if (has_index && ls->is_array) {
@@ -791,6 +802,11 @@ namespace jass {
 					}
 
 					n->exp_value_type = ls->type;
+
+					if (s.is_action_set) {
+						ls->is_init = true;
+						s.is_action_set = false;
+					}
 				} else if (auto gs = s.globals.find(name); gs) {
 					if (has_index && !gs->is_array) { //全局变量不需要索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_WASTE_INDEX", name);
@@ -816,8 +832,6 @@ namespace jass {
 	struct exp_call_content
 		: parse_tree::apply<exp_call_content>
 	{
-
-
 		template<typename ParseInput>
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
@@ -878,6 +892,25 @@ namespace jass {
 		}
 	};
 
+	//检查set 变量
+	struct action_set_content
+		: parse_tree::apply<action_set_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			auto& var = n->children[0];
+			auto& exp = n->children[1];
+
+			
+			if (!s.is_extends_type(var->exp_value_type, exp->exp_value_type)) { //值类型 跟变量类型不符
+				throw jass_parse_error(exp->as_memory_input(), "ERROR_SET_TYPE", var->sub_string_view(0), var->exp_value_type, exp->exp_value_type);
+			}
+
+		}
+	};
+
+
 	template<typename Rule>
 	using selector = parse_tree::selector<
 		Rule,
@@ -909,6 +942,7 @@ namespace jass {
 
 
 		exp_content::on<
+			exp,
 			exp_check_and,
 			exp_check_or,
 			exp_check_compare,
@@ -917,7 +951,7 @@ namespace jass {
 		>,
 	
 		parse_tree::store_content::on<
-			add, sub, mul, div, mod, gt, ge, lt, le, eq, ue
+			add, sub, mul, div, mod, gt, ge, lt, le, eq, ue, exp_or, exp_and
 		>,
 
 		value_content::on<null, boolean, string, real, integer, code>,
@@ -928,7 +962,9 @@ namespace jass {
 			exp_var_name,
 			exp_call_name,
 			exp_call_args
-		>
+		>,
+
+		action_set_content::on<action_set>
 	>;
 
 	
@@ -956,6 +992,14 @@ namespace jass {
 		template< typename ActionInput >
 		static void apply(const ActionInput& in, jass_state& s) {
 			s.is_local_block = false;
+		}
+	};
+
+	template<>
+	struct check_action<key_set> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+			s.is_action_set = true;
 		}
 	};
 
