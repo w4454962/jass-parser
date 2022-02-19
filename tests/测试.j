@@ -3,13 +3,10 @@ type unit extends handle
 
 
 
-native test2 takes handle a, handle aa returns unit 
+native add takes integer a, integer b returns integer 
 
 function test takes handle aa, handle ab returns integer 
-    local unit u1 = null
-    local handle h1 = u1
- 
-
+    local integer i = 1 + add(2 * 3, 1 * 1.234)
     //local string array buf
 
     //local string s =  "a" + test2()

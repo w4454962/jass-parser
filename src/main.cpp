@@ -32,6 +32,9 @@ void output_error(const position& p, std::string_view line, std::string_view msg
 }
 
 
+
+
+
 bool tests(const fs::path& tests_path) {
 
 	std::cout << "each path " << tests_path << std::endl;
@@ -62,29 +65,16 @@ bool tests(const fs::path& tests_path) {
 		try {
 			std::string str;
 
-			//jass::jass_state state;
-
-			//state.set_source(path.string());
-
 			jass::jass_state state;
 			
 			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
 
-			//parse_tree::print_dot(std::cout, *root);
 
-			//for (auto&& [k, v] : state.types) {
-			//	std::cout << "types:" << k << v->string_view();
-			//}
-			
-			//const auto ret = parse<jass::grammar, jass::check_action>(in, state);
-	
-			//std::cout << path << ":" << ret << std::endl;
-		
 		}
 		catch (const jass::jass_parse_error& e) {
 			const auto p = e.positions().front();
 
-			output_error(p, in.line_at(p), e.message());
+			output_error(p, jass::line_at(in, p), e.message());
 
 			i++;
 			if (i > 1) {
@@ -93,12 +83,7 @@ bool tests(const fs::path& tests_path) {
 		} catch(const tao::pegtl::parse_error& e) {
 			const auto p = e.positions().front();
 
-			output_error(p, in.line_at(p), e.message());
-
-			//std::cerr << base::u2a(e.what()) << std::endl
-			//	<< in.line_at(p) << std::endl
-			//	<< std::setw(p.column) << '^' << std::endl
-			//	<< e.message() << std::endl;
+			output_error(p, jass::line_at(in, p), e.message());
 
 			i++;
 			if (i > 1) {

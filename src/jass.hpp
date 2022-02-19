@@ -320,6 +320,16 @@ namespace jass {
 			return it->second;
 		}
 
+		std::string_view get_base_type(const std::string_view& t) {
+			auto type = types.find(t);
+			while (type->parent) {
+				type = type->parent;
+			}
+
+			return type->name;
+		}
+
+
 		jass_state() {
 			//base type
 
@@ -332,8 +342,10 @@ namespace jass {
 				types.save(name, obj);
 				keyword_map.emplace(name, true);
 
-				if (name == "code" || name == "string" || name == "handle") {
+				if (name == "code" || name == "string" || name == "handle") { //这些类型可以使用null
 					obj->child_map.emplace("null", true);
+				} else if (name == "real"){ // real类型 可以使用integer
+					obj->child_map.emplace("integer", true);
 				}
 			}
 
@@ -352,7 +364,29 @@ namespace jass {
 	};
 
 
+	inline std::string_view get_match_exp_type(const std::string_view& t1, const std::string_view& t2) {
+		if (t1 == demangle<integer>()) {
+			if (t2 == demangle<integer>()) {
+				return demangle<integer>();
+			}
+			else if (t2 == demangle<real>()) {
+				return demangle<real>();
+			}
+		}
+		else if (t1 == demangle<real>()) {
+			if (t2 == demangle<integer>() || t2 == demangle<real>()) {
+				return demangle<real>();
+			}
+		}
+		return "";
+	}
 
+	inline std::string_view get_string_connect(const std::string_view& t1, const std::string_view& t2) {
+		if ((t1 == demangle<string>() || t1 == demangle<null>()) && (t2 == demangle<string>() || t2 == demangle<null>())) {
+			return demangle<string>();
+		}
+		return "";
+	}
 
 	template<typename... Args>
 	inline std::string error_format(std::string_view msg, Args... args) {
@@ -596,37 +630,9 @@ namespace jass {
 	struct exp_content
 		: parse_tree::apply< exp_content >
 	{
-		static std::string_view get_match_exp_type(const std::string_view& t1, const std::string_view& t2) {
+		
 
-			if (t1 == demangle<integer>()) {
-				if (t2 == demangle<integer>()) {
-					return demangle<integer>();
-				} else if (t2 == demangle<real>()){
-					return demangle<real>();
-				}
-			} else if (t1 == demangle<real>()) {
-				if (t2 == demangle<integer>() || t2 == demangle<real>()) {
-					return demangle<real>();
-				}
-			}
-			return "";
-		}
-	
-		static std::string_view get_string_connect(const std::string_view& t1, const std::string_view& t2) {
-			if ((t1 == demangle<string>() || t1 == demangle<null>()) && (t2 == demangle<string>() || t2 == demangle<null>())) {
-				return demangle<string>();
-			}
-			return "";
-		}
 
-		static std::string_view get_base_type(const std::string_view& t, jass_state& s) {
-			auto type = s.types.find(t);
-			while (type->parent) {
-				type = type->parent;
-			}
-
-			return type->name;
-		}
 
 		static std::string_view check_exp_type(std::unique_ptr<jass_node>& first, std::unique_ptr<jass_node>& op, std::unique_ptr<jass_node>& second, jass_state& s) {
 			std::string str = op->string();
@@ -683,7 +689,7 @@ namespace jass {
 					exp_type = demangle<boolean>();
 				} else if (!get_match_exp_type(t1, t2).empty()) {
 					exp_type = demangle<boolean>();
-				} else if (get_base_type(t1, s) == get_base_type(t2, s)) {
+				} else if (s.get_base_type(t1) == s.get_base_type(t2)) {
 					exp_type = demangle<boolean>();
 				} else {
 					throw jass_parse_error(op->as_memory_input(), "ERROR_EQUAL", t1, t2);
@@ -853,7 +859,7 @@ namespace jass {
 					ss << arg->type << " " << arg->name;
 				}
 				throw jass_parse_error(n->as_sub_input(0), "ERROR_LESS_ARGS", name, args_count, param_count, ss.str());
-			} else {
+			} else if (has_params){
 				//参数数量一致的情况下 检查参数类型
 				auto& params = n->children[1];
 
@@ -952,6 +958,22 @@ namespace jass {
 			s.is_local_block = false;
 		}
 	};
+
+
+	//自定义规则获取一行
+	template<typename ParseInput>
+	std::string_view line_at(ParseInput& in, const tao::pegtl::position& p)
+	{
+		const char* b = in.begin_of_line(p);
+
+		using input_t = memory_input< tracking_mode::lazy, eol::lf_crlf, const char* >;
+		input_t in2(in.at(p), in.end(), "");
+		using line = until<line_char, bytes<1>>;
+
+		(void)normal< line >::match< apply_mode::nothing, rewind_mode::dontcare, nothing, normal >(in2);
+
+		return std::string_view(b, static_cast<std::size_t>(in2.current() - b));
+	}
 
 }
 
