@@ -5,6 +5,7 @@
 #define ERR TAO_PEGTL_RAISE_MESSAGE
  
 namespace jass {
+
 	using namespace tao::pegtl;
 
 	struct line_char : sor<one<'\r', '\n'>, istring<'\r', '\n'>> {};
@@ -64,12 +65,12 @@ namespace jass {
 	struct boolean : sor<key_true, key_false> {};
 
 	struct digits : plus< digit> {};
-	struct frac : seq<one<'.'>, digits > {};
-	struct real : seq<space, opt<one< '-' >>, space, digits, opt<frac>> {};
+
+	struct real : seq<space, opt<one< '-' >>, space, digits, one<'.'>, digits> {};
 
 	struct integer256 : seq<space, short_string<'\''>> {};
-	struct integer16 : if_must<sor<istring<'0', 'x'>, one<'$'>>, plus<xdigit>> {};
-	struct integer8 : if_must<istring<'0'>, plus<odigit>> {};
+	struct integer16 : seq<sor<istring<'0', 'x'>, one<'$'>>, plus<xdigit>> {};
+	struct integer8 : seq<istring<'0'>, plus<odigit>> {};
 	struct integer : seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, digits>> {};
 
 
@@ -79,7 +80,8 @@ namespace jass {
 
 	struct code : seq<key_function, space, code_name> {};
 
-	struct value : sor<key_null, boolean, string, real, integer, code> {};
+	struct null : key_null {};
+	struct value : sor<null, boolean, string, real, integer,  code> {};
 
 
 	struct gt : istring<'>' > {};
@@ -105,16 +107,18 @@ namespace jass {
 	struct exp_unit;
 
 	struct exp_neg : seq<space, sub, exp_unit> {};
-	struct exp_var : seq<space, name, opt<seq<bl, exp, br>>> {};
+	struct exp_var_name : name {};
+	struct exp_var : seq<space, exp_var_name, opt<seq<bl, exp, br>>> {};
 	struct exp_value : sor<value, exp_var> {};
 	struct exp_call_args : seq<exp, star<seq<comma, exp>>> {};
-	struct exp_call : seq<space, name, pl, opt<exp_call_args>, pr> {};
+	struct exp_call_name: name {};
+	struct exp_call : seq<space, exp_call_name, pl, opt<exp_call_args>, pr> {};
 	struct exp_code : seq<key_function, space, name, pl, opt<exp_call_args>, pr> {};
 	struct exp_paren : seq<pl, exp, pr> {};
 	struct exp_unit : sor<exp_paren, exp_code, exp_call, exp_value, exp_neg> {};
 
 	struct exp_add_sub : sor<add, sub> {};
-	struct exp_mul_div : sor<mul, div> {};
+	struct exp_mul_div : sor<mul, div, mod> {};
 
 	struct exp_not : key_not {};
 
@@ -140,11 +144,11 @@ namespace jass {
 
 	struct local_name:name {};
 	struct local_type:name {};
-	struct local : if_must<key_local, space, local_type ,opt<key_array>, space, local_name, opt<seq<assign, exp>>> {};
-	struct local_list : star<sor<local, newline>> {};
+	struct local : if_must<key_local, space, local_type ,opt<key_array>, space, local_name, opt<seq<assign, exp>>, newline> {};
+	struct local_list : star<sor<seq<key_constant, ERR("ERROR_CONSTANT_LOCAL")>, local, newline>> {};
 
 	struct action;
-	struct action_list : star<sor<action, newline, seq<local, ERR("ERROR_LOCAL_IN_FUNCTION")>>> {};
+	struct action_list : star<sor<action, newline, seq<key_local, ERR("ERROR_LOCAL_IN_FUNCTION")>>> {};
 
 	struct action_call :seq<opt<key_debug>, key_call, exp_call> {};
 	struct action_set :seq<key_set, exp_var, assign, exp> {};
@@ -191,7 +195,8 @@ namespace jass {
 	struct jass_node :
 		parse_tree::basic_node<jass_node>
 	{
-	
+		std::string_view exp_value_type;
+
 		auto sub_string_view(size_t pos) {
 			return children[pos]->string_view();
 		}
@@ -241,19 +246,12 @@ namespace jass {
 		}
 	};
 	
-	struct value_state : state_base {
-		data_type value_type;
-
-	};
-
-	struct exp_state : state_base {
-		data_type value_type;
-
-	};
 	
 	struct type_state : state_base {
 		data_type name;
 		std::shared_ptr<type_state> parent;
+		data_type root;
+		std::unordered_map<data_type, bool> child_map;
 	};
 	
 	struct local_state : state_base {
@@ -267,7 +265,7 @@ namespace jass {
 	struct global_state : state_base {
 		data_type type;
 		data_type name;
-		std::shared_ptr<exp_state> value;
+	
 		bool is_array;
 		bool is_const;
 	};
@@ -291,8 +289,6 @@ namespace jass {
 	};
 	
 
-
-	 
 	struct jass_state
 	{
 		std::shared_ptr<std::string> source;
@@ -302,20 +298,26 @@ namespace jass {
 		container<native_state> natives;
 		container<function_state> functions;
 
-		std::unordered_map<jass_node*, std::shared_ptr<exp_state>> exp_map;
+		bool is_function_block = false;
+		bool is_local_block = false;
+
 		std::unordered_map<std::string_view, bool> keyword_map;
 
 
-		std::shared_ptr<exp_state> make_exp_state(const std::unique_ptr<jass_node>& n) {
-			if (exp_map.find(n.get()) == exp_map.end()) {
-				auto es = std::make_shared<exp_state>();
-				es->save_node(n);
-			}
-			return exp_map.at(n.get());
-		}
-
 		bool is_keyword(const std::string_view& str) {
 			return keyword_map.find(str) != keyword_map.end();
+		}
+
+		bool is_extends_type(const std::string_view& need_type, const std::string_view& input_type) {
+			if (input_type == need_type) {
+				return true;
+			}
+			auto ts = types.find(need_type);
+			auto it = ts->child_map.find(input_type);
+			if (it == ts->child_map.end()) {
+				return false;
+			}
+			return it->second;
 		}
 
 		jass_state() {
@@ -326,8 +328,13 @@ namespace jass {
 			for (auto name : base_list) {
 				auto obj = std::make_shared<type_state>();
 				obj->name = name;
+				obj->root = name;
 				types.save(name, obj);
 				keyword_map.emplace(name, true);
+
+				if (name == "code" || name == "string" || name == "handle") {
+					obj->child_map.emplace("null", true);
+				}
 			}
 
 
@@ -356,7 +363,7 @@ namespace jass {
 	{
 	public:
 		template<typename ParseInput, typename... Args>
-		jass_parse_error(const ParseInput& in, const std::string& msg, Args... args)
+		jass_parse_error(const ParseInput& in, const std::string_view& msg, Args... args)
 			: parse_error(error_format(msg, args...), in)
 		{ }
 
@@ -392,8 +399,20 @@ namespace jass {
 			ts->name = name;
 			ts->parent = parent;
 			ts->save_node(n);
+			ts->root = parent->root;
+
+			//继承置空的能力 
+			if (auto it = parent->child_map.find("null"); it->second) {
+				ts->child_map.emplace("null", true);
+			}
+
 			s.types.save(name, ts);
 			s.keyword_map.emplace(name, true);
+
+			while (parent){
+				parent->child_map.emplace(name, true);
+				parent = parent->parent;
+			}
 		}
 	};
 
@@ -431,6 +450,7 @@ namespace jass {
 				auto fs = std::make_shared<function_state>();
 				ns = fs;
 				s.functions.save(name, fs);
+				s.is_function_block = true;
 			}
 
 			ns->name = name;
@@ -514,7 +534,19 @@ namespace jass {
 					position p = lp->node->begin();
 					throw jass_parse_error(node->as_memory_input(), "WARNING_REDEFINE_VAR", name, p.source, p.line);
 				}
-				
+
+				auto fp = s.functions.find(name);
+				if (fp) { //局部变量跟函数名重复
+					position p = fp->node->begin();
+					throw jass_parse_error(node->as_memory_input(), "ERROR_REDEFINE_FUNCTION", name, p.source, p.line);
+				}
+
+				auto np = s.natives.find(name);
+				if (np) { //局部变量跟native重复
+					position p = np->node->begin();
+					throw jass_parse_error(node->as_memory_input(), "ERROR_DEFINE_NATIVE_TYPE", name, p.source, p.line);
+				}
+
 				return name;
 			};
 
@@ -536,17 +568,26 @@ namespace jass {
 				ls->type = check_type(0);
 
 				if (n->children[1]->is_type<key_array>()) { 
+
 					ls->is_array = true;
 					ls->name = check_name(2);
 
+					if (ls->type == demangle<code>()) { //code类型不能是数组
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_CODE_ARRAY");
+						
+					}
 				} else {
 					ls->name = check_name(1);
-					exp = n->children[2].get();
+					auto& exp = n->children[2];
 
-					//std::cout << "type : " << ls->type << " s: " << exp->type << std::endl;
+					if (!s.is_extends_type(ls->type, exp->exp_value_type)) { //值类型 跟变量类型不符
+						throw jass_parse_error(n->as_sub_input(2), "ERROR_SET_TYPE", ls->name, ls->type, exp->exp_value_type);
+					}
 
-					parse_tree::print_dot(std::cout, *(parse_tree::node*)exp);
+					ls->is_init = true;
 				}
+			} else if (size == 4) { //数组不能直接初始化
+				throw jass_parse_error(n->as_sub_input(3), "ERROR_ARRAY_INIT");
 			}
 			fs->locals.save(ls->name, ls);
 		}
@@ -555,9 +596,124 @@ namespace jass {
 	struct exp_content
 		: parse_tree::apply< exp_content >
 	{
+		static std::string_view get_match_exp_type(const std::string_view& t1, const std::string_view& t2) {
 
-		static std::string_view get_node_type(std::unique_ptr<jass_node>& node) {
+			if (t1 == demangle<integer>()) {
+				if (t2 == demangle<integer>()) {
+					return demangle<integer>();
+				} else if (t2 == demangle<real>()){
+					return demangle<real>();
+				}
+			} else if (t1 == demangle<real>()) {
+				if (t2 == demangle<integer>() || t2 == demangle<real>()) {
+					return demangle<real>();
+				}
+			}
+			return "";
+		}
+	
+		static std::string_view get_string_connect(const std::string_view& t1, const std::string_view& t2) {
+			if ((t1 == demangle<string>() || t1 == demangle<null>()) && (t2 == demangle<string>() || t2 == demangle<null>())) {
+				return demangle<string>();
+			}
+			return "";
+		}
 
+		static std::string_view get_base_type(const std::string_view& t, jass_state& s) {
+			auto type = s.types.find(t);
+			while (type->parent) {
+				type = type->parent;
+			}
+
+			return type->name;
+		}
+
+		static std::string_view check_exp_type(std::unique_ptr<jass_node>& first, std::unique_ptr<jass_node>& op, std::unique_ptr<jass_node>& second, jass_state& s) {
+			std::string str = op->string();
+			uint32_t byte = *(uint32_t*)(str.c_str());
+
+			std::string_view t1 = first->exp_value_type, t2 = second->exp_value_type;
+			std::string_view exp_type = "nothing";
+
+			switch (byte)
+			{
+			case '+':
+				exp_type = get_match_exp_type(t1, t2); //如果是数字相加
+ 
+				if (exp_type.empty()) { //否则 如果是 字符串连接
+					exp_type = get_string_connect(t1, t2);
+				}
+				if (exp_type.empty()) {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_ADD", t1, t2);
+				}
+				break;
+			case '-':
+				exp_type = get_match_exp_type(t1, t2); 
+				if (exp_type.empty()) {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_SUB", t1, t2);
+				}
+				break;
+
+			case '*':
+				exp_type = get_match_exp_type(t1, t2);
+				if (exp_type.empty()) {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_MUL", t1, t2);
+				}
+				break;
+
+			case '/':
+				exp_type = get_match_exp_type(t1, t2);
+				if (exp_type.empty()) {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_DIV", t1, t2);
+				}
+				break;
+
+			case '%':
+			
+				if (t1 == demangle<integer>() && t2 == demangle<integer>()) {
+					exp_type = t1;
+				} else {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_MOD");
+				}
+				break;
+
+			case '==':
+			case '!=':
+				if (t1 == demangle<null>() && t2 == demangle<null>()) {
+					exp_type = demangle<boolean>();
+				} else if (!get_match_exp_type(t1, t2).empty()) {
+					exp_type = demangle<boolean>();
+				} else if (get_base_type(t1, s) == get_base_type(t2, s)) {
+					exp_type = demangle<boolean>();
+				} else {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_EQUAL", t1, t2);
+				}
+				break;
+
+			case '>':
+			case '<':
+			case '>=':
+			case '<=':
+				if (!get_match_exp_type(t1, t2).empty()) {
+					exp_type = demangle<boolean>();
+				} else {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_COMPARE", t1, t2);
+				}
+				break;
+			case 'and':
+			case 'or':
+
+				if (t1 == demangle<boolean>() && t2 == demangle<boolean>()) {
+					exp_type = demangle<boolean>();
+				} else {
+					throw jass_parse_error(op->as_memory_input(), "ERROR_AND", t1, t2);
+				}
+				break;
+			default:
+				throw jass_parse_error(op->as_memory_input(), "UNKNOWN_EXP");
+				break;
+			}
+			return exp_type;
 		}
 
 		template<typename ParseInput>
@@ -572,15 +728,149 @@ namespace jass {
 				auto& first = n->children[i - 1];
 				auto& op = n->children[i];
 				auto& second = n->children[i + 1];
+	
+				n->exp_value_type = check_exp_type(first, op, second, s);
 			}
-				
-		
-			//std::cout << "type " << n->type << " " << n->string_view() << " size " << n->children.size() << std::endl;
+			
+			//std::cout << "type " << n->type << " " << n->string_view() << " size " << n->children.size()  << " " << n->exp_value_type << std::endl;
+	
 		}
 	};
 
 
+	struct value_content
+		: parse_tree::apply< value_content >
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			n->exp_value_type = n->type;
+		}
+	};
 
+	struct var_content
+		: parse_tree::apply<var_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			auto name = n->sub_string_view(0);
+
+			bool has_index = n->children.size() > 1;
+
+			if (s.is_function_block) { //如果是在函数里引用变量值 优先局部变量
+				auto fs = s.functions.back();
+
+				if (auto as = fs->args.find(name); as) {
+					if (has_index) { //参数不需要索引
+						throw jass_parse_error(n->as_sub_input(1), "ERROR_WASTE_INDEX", name);
+					}
+					n->exp_value_type = as->type;
+				} else if (auto ls = fs->locals.find(name); ls) {
+					if (has_index && !ls->is_array) { //局部变量不需要索引
+						throw jass_parse_error(n->as_sub_input(1), "ERROR_WASTE_INDEX", name);
+					}else if (!has_index && ls->is_array) { //局部数组缺少索引
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_NO_INDEX", name);
+					}else if (has_index && ls->is_array) {
+						auto& exp = n->children[1];
+						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
+							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
+						}else if (s.is_local_block)  { //在局部变量申明区使用未初始化的局部数组 
+							throw jass_parse_error(n->as_sub_input(0), "ERROR_GET_UNINIT", name);
+						}
+					}
+
+					if (!ls->is_array && !ls->is_init) { //非数组的局部变量 如果没有初始化就引用 进行报错
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_GET_UNINIT", name);
+					}
+
+					n->exp_value_type = ls->type;
+				} else if (auto gs = s.globals.find(name); gs) {
+					if (has_index && !gs->is_array) { //全局变量不需要索引
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_WASTE_INDEX", name);
+					} else if (!has_index && gs->is_array) { //全局数组缺少索引
+						throw jass_parse_error(n->as_sub_input(1), "ERROR_NO_INDEX", name);
+					} else if (has_index && gs->is_array) {
+						auto& exp = n->children[1];
+						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
+							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
+						}
+					}
+					n->exp_value_type = ls->type;
+				} else {
+					//变量不存在
+					throw jass_parse_error(n->as_sub_input(0), "VAR_NO_EXISTS", name);
+				}
+				
+			}
+		}
+	};
+	
+	
+	struct exp_call_content
+		: parse_tree::apply<exp_call_content>
+	{
+
+
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			auto name = n->sub_string_view(0);
+			bool has_params = n->children.size() > 1;
+
+			std::shared_ptr<native_state> f;
+			 if(auto ns = s.natives.find(name); ns) { //调用本地函数
+				f = ns;
+			} else if (auto fs = s.functions.find(name); fs) { //调用自定义函数
+				f = fs;
+			} else {
+				//函数不存在
+				throw jass_parse_error(n->as_sub_input(0), "FUNCTION_NO_EXISTS", name);
+			}
+			
+			size_t param_count = 0;
+			size_t args_count = f->args.list.size();
+
+			if (has_params) {
+				param_count = n->children[1]->children.size();
+			}
+
+			if (s.is_local_block) { 
+				if (name == s.functions.back()->name) { //在局部变量申明区进行递归
+					throw jass_parse_error(n->as_sub_input(0), "ERROR_LOCAL_RECURSION");
+				}
+			}
+			
+			if (param_count > args_count) {//参数填多了
+				throw jass_parse_error(n->as_sub_input(0), "ERROR_MORE_ARGS", name, args_count, param_count);
+			} else if (param_count < args_count){
+				//参数数量少了
+				std::stringstream ss;
+				for (size_t i = param_count; i < args_count; i++) {
+					auto& arg = f->args.list[i];
+					if (i > param_count)
+						ss << ", ";
+					ss << arg->type << " " << arg->name;
+				}
+				throw jass_parse_error(n->as_sub_input(0), "ERROR_LESS_ARGS", name, args_count, param_count, ss.str());
+			} else {
+				//参数数量一致的情况下 检查参数类型
+				auto& params = n->children[1];
+
+				for (size_t i = 0; i < args_count; i++) {
+					auto& param = params->children[i];
+					auto& arg = f->args.list[i];
+
+					if (!s.is_extends_type(arg->type, param->exp_value_type)) {
+						throw jass_parse_error(param->as_memory_input(), "ERROR_WRONG_ARG", name, i + 1, arg->type, param->exp_value_type) ;
+					}
+				}
+			}
+
+			n->exp_value_type = f->returns_type;
+
+		}
+	};
 
 	template<typename Rule>
 	using selector = parse_tree::selector<
@@ -608,8 +898,7 @@ namespace jass {
 		parse_tree::store_content::on<
 			local_type,
 			local_name,
-			key_array,
-			exp
+			key_array
 		>,
 
 
@@ -622,12 +911,48 @@ namespace jass {
 		>,
 	
 		parse_tree::store_content::on<
-			add, sub, mul, div, mod,
-			value
+			add, sub, mul, div, mod, gt, ge, lt, le, eq, ue
+		>,
+
+		value_content::on<null, boolean, string, real, integer, code>,
+		var_content::on<exp_var>,
+		exp_call_content::on<exp_call>,
+
+		parse_tree::store_content::on<
+			exp_var_name,
+			exp_call_name,
+			exp_call_args
 		>
 	>;
 
 	
+	template< typename Rule >
+	struct check_action 
+		:nothing<Rule>
+	{};
+
+	template<>
+	struct check_action<key_endfunction> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+			s.is_function_block = false;
+		}
+	};
+	template<>
+	struct check_action<function_statement> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+			s.is_local_block = true;
+		}
+	};
+	template<>
+	struct check_action<local_list> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+			s.is_local_block = false;
+		}
+	};
+
 }
 
 

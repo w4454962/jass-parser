@@ -1,13 +1,18 @@
 
-type aaa extends integer 
-
-type abc extends aaa
+type unit extends handle 
 
 
-native test2 takes handle a, handle aa returns aaa 
 
-function test takes handle aa, handle ab returns aaa 
-    local integer i = (1+(2 - 3)+4)-5*6
+native test2 takes handle a, handle aa returns unit 
+
+function test takes handle aa, handle ab returns integer 
+    local unit u1 = null
+    local handle h1 = u1
+ 
+
+    //local string array buf
+
+    //local string s =  "a" + test2()
 
 endfunction
 

@@ -107,7 +107,7 @@ template< typename T >
    constexpr std::string_view sv = __FUNCSIG__;
    constexpr auto begin = sv.find( "demangle<" );
    static_assert( internal::dependent_true< T > && ( begin != std::string_view::npos ) );
-   constexpr auto tmp = sv.substr( begin + 9 );
+   constexpr auto tmp = sv.substr( begin + 9 + 13);
    constexpr auto end = tmp.rfind( '>' );
    static_assert( internal::dependent_true< T > && ( end != std::string_view::npos ) );
    return tmp.substr( 0, end );

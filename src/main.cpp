@@ -68,7 +68,7 @@ bool tests(const fs::path& tests_path) {
 
 			jass::jass_state state;
 			
-			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, nothing>(in, state);
+			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
 
 			//parse_tree::print_dot(std::cout, *root);
 

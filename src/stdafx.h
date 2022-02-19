@@ -12,9 +12,13 @@
 #include <unordered_map>
 #include <regex>
 #include <memory>
+#include <string>
+#include <sstream>
 #define __cpp_lib_format
 
 #include <format>
+
+
 
 #include <tao/pegtl.hpp>
 #include <tao/pegtl/parse_error.hpp>
