@@ -55,7 +55,7 @@ bool tests(const fs::path& tests_path) {
 
 	 
 	//paths.push_back(tests_path /"should-fail" / "code不能有参数.j");
-	paths.push_back(tests_path / "测试.j");
+	paths.push_back(tests_path / "aa.j");
 	
 	int i = 0;
 

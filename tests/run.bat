@@ -1,2 +1,2 @@
-pjass-latest.exe ²âÊÔ.j
+pjass-latest.exe aa.j
 pause

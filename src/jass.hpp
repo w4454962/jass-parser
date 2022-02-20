@@ -139,7 +139,9 @@ namespace jass {
 	struct type_parent_name : name {};
 	struct type_extends : if_must<key_type, space, type_name, sor<key_extends, ERR("ERROR_EXTENDS_TYPE")>, space, sor<type_parent_name, ERR("ERROR_EXTENDS_TYPE")>> {};
 
-	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, space, name, opt<key_array>, space, name, opt<seq<assign, exp>>> {};
+	struct global_name : name {};
+	struct global_type : name {};
+	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, space, global_type, opt<key_array>, space, global_name, opt<seq<assign, exp>>, newline> {};
 	struct globals : if_must<key_globals, must<newline, star<sor<global, newline>>, key_endglobals>> {};
 
 	struct local_name:name {};
@@ -150,10 +152,10 @@ namespace jass {
 	struct action;
 	struct action_list : star<sor<action, newline, seq<key_local, ERR("ERROR_LOCAL_IN_FUNCTION")>>> {};
 
-	struct action_call :seq<opt<key_debug>, key_call, exp_call> {};
-	struct action_set :seq<key_set, exp_var, assign, exp> {};
-	struct action_return : seq<key_return, sor<opt<exp>, space>> {};
-	struct action_exitloop : seq<key_exitwhen, exp> {};
+	struct action_call :seq<opt<key_debug>, key_call, exp_call, newline> {};
+	struct action_set :seq<key_set, exp_var, assign, exp, newline> {};
+	struct action_return : seq<key_return, sor<opt<exp>,newline>> {};
+	struct action_exitloop : seq<key_exitwhen, exp, newline> {};
 
 	struct if_statement : seq<key_if, exp, key_then, newline, action_list> {};
 	struct elseif_statement : seq<key_elseif, exp, key_then, newline, action_list> {};
@@ -203,6 +205,11 @@ namespace jass {
 
 		auto as_sub_input(size_t pos) {
 			return children[pos]->as_memory_input();
+		}
+
+		template<typename Type>
+		auto sub_is_type(size_t pos) {
+			return children[pos]->is_type<Type>();
 		}
 	};
 
@@ -301,6 +308,7 @@ namespace jass {
 		bool is_function_block = false;
 		bool is_local_block = false;
 		bool is_action_set = false;
+		bool has_function = false;
 
 		std::unordered_map<std::string_view, bool> keyword_map;
 
@@ -489,6 +497,7 @@ namespace jass {
 				ns = fs;
 				s.functions.save(name, fs);
 				s.is_function_block = true;
+				s.has_function = true;
 			}
 
 			ns->name = name;
@@ -534,6 +543,100 @@ namespace jass {
 	};
 
 	
+	//检查global全局变量申明格式
+	struct global_content
+		: parse_tree::apply< global_content >
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			size_t size = n->children.size();
+
+			auto gs = std::make_shared<global_state>();
+			gs->is_array = false;
+			gs->is_const = false;
+			gs->save_node(n);
+
+			auto check_name = [&](size_t pos) {
+				auto& node = n->children[pos];
+				auto name = node->string_view();
+				if (s.is_keyword(name)) {//全局变量名字是关键字
+					throw jass_parse_error(node->as_memory_input(), "ERROR_KEY_WORD", name);
+				}
+
+				auto ptr = s.globals.find(name);
+				if (ptr) { //全局变量重复定义
+					position p = ptr->node->begin();
+					throw jass_parse_error(node->as_memory_input(), "WARNING_REDEFINE_VAR", name, p.source, p.line);
+				}
+
+				auto fp = s.functions.find(name);
+				if (fp) { //全局变量跟函数名重复
+					position p = fp->node->begin();
+					throw jass_parse_error(node->as_memory_input(), "ERROR_REDEFINE_FUNCTION", name, p.source, p.line);
+				}
+
+				auto np = s.natives.find(name);
+				if (np) { //全局变量跟native重复
+					position p = np->node->begin();
+					throw jass_parse_error(node->as_memory_input(), "ERROR_DEFINE_NATIVE_TYPE", name, p.source, p.line);
+				}
+				return name;
+			};
+
+			auto check_type = [&](size_t pos) {
+				auto& node = n->children[pos];
+				auto type = node->string_view();
+				if (!s.types.find(type)) {//局部变量类型不存在
+					throw jass_parse_error(node->as_memory_input(), "ERROR_UNDEFINE_TYPE", type);
+				}
+				return type;
+			};
+
+			if (size == 2) { // type name
+				gs->type = check_type(0);
+				gs->name = check_name(1);
+			} else if (size == 3) {
+				if (n->sub_is_type<key_constant>(0)) { //当 constant type name 时报错
+					throw jass_parse_error(n->as_sub_input(0), "ERROR_CONSTANT_INIT");
+				}
+				gs->type = check_type(0);
+
+				if (n->sub_is_type<key_array>(1)) { // type array name
+					gs->is_array = true;
+					gs->name = check_name(2);
+				
+					if (gs->type == demangle<code>()) { //code类型不能是数组
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_CODE_ARRAY");
+					}
+				} else if (n->sub_is_type<global_name>(1)){ // type name = value
+					gs->name = check_name(1);
+					auto& exp = n->children[2];
+					if (!s.is_extends_type(gs->type, exp->exp_value_type)) { //值类型 跟变量类型不符
+						throw jass_parse_error(n->as_sub_input(2), "ERROR_SET_TYPE", gs->name, gs->type, exp->exp_value_type);
+					}
+				} 
+			} else if (size == 4) { //constant type name = value 
+				if (n->sub_is_type<key_array>(2)) { //当 constant type array name 时报错
+					throw jass_parse_error(n->as_sub_input(0), "ERROR_CONSTANT_INIT");
+				}else if (n->sub_is_type<key_array>(1)) { //当 type array name = value 时报错
+					throw jass_parse_error(n->as_sub_input(1), "ERROR_ARRAY_INIT");
+				}
+
+				gs->type = check_type(1);
+				gs->name = check_name(2);
+				gs->is_const = true;
+				auto& exp = n->children[3];
+				if (!s.is_extends_type(gs->type, exp->exp_value_type)) { //值类型 跟变量类型不符
+					throw jass_parse_error(n->as_sub_input(3), "ERROR_SET_TYPE", gs->name, gs->type, exp->exp_value_type);
+				}
+			} else if (size == 5) { // constant type array name = value
+				throw jass_parse_error(n->as_sub_input(2), "ERROR_ARRAY_INIT");
+			}
+			
+			s.globals.save(gs->name, gs);
+		}
+	};
 
 	//检查local局部变量申明格式
 	struct local_content
@@ -597,7 +700,7 @@ namespace jass {
 				return type;
 			};
 
-			jass_node* exp = nullptr;
+		
 			if (size == 2) {
 				ls->type = check_type(0);
 				ls->name = check_name(1);
@@ -748,9 +851,6 @@ namespace jass {
 	 
 				n->exp_value_type = check_exp_type(n, s, first, op, second);
 			}
-			
-			//std::cout << "type " << n->type << " " << n->string_view() << " size " << n->children.size()  << " " << n->exp_value_type << std::endl;
-	
 		}
 	};
 
@@ -797,32 +897,63 @@ namespace jass {
 						}
 					}
 
+					if (s.is_action_set) { //局部变量set
+						ls->is_init = true;
+						s.is_action_set = false;
+					}
+
 					if (!ls->is_array && !ls->is_init) { //非数组的局部变量 如果没有初始化就引用 进行报错
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_GET_UNINIT", name);
 					}
 
 					n->exp_value_type = ls->type;
 
-					if (s.is_action_set) {
-						ls->is_init = true;
-						s.is_action_set = false;
-					}
 				} else if (auto gs = s.globals.find(name); gs) {
 					if (has_index && !gs->is_array) { //全局变量不需要索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_WASTE_INDEX", name);
 					} else if (!has_index && gs->is_array) { //全局数组缺少索引
-						throw jass_parse_error(n->as_sub_input(1), "ERROR_NO_INDEX", name);
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_NO_INDEX", name);
 					} else if (has_index && gs->is_array) {
 						auto& exp = n->children[1];
 						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
 							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
 						}
 					}
-					n->exp_value_type = ls->type;
+
+					if (s.is_action_set) { //全局变量set
+						s.is_action_set = false;
+
+						if (gs->is_const) { //修改constant类型的全局变量
+							throw jass_parse_error(n->as_sub_input(0), "ERROR_SET_CONSTANT", name);
+							
+						}
+					}
+					n->exp_value_type = gs->type;
 				} else {
 					//变量不存在
 					throw jass_parse_error(n->as_sub_input(0), "VAR_NO_EXISTS", name);
 				}
+				
+			} else {
+				//全局变量申明时初始化赋值
+			
+				if (auto gs = s.globals.find(name); gs) {
+					if (has_index && !gs->is_array) { //全局变量不需要索引
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_WASTE_INDEX", name);
+					} else if (!has_index && gs->is_array) { //全局数组缺少索引
+						throw jass_parse_error(n->as_sub_input(0), "ERROR_NO_INDEX", name);
+					} else if (has_index && gs->is_array) {
+						auto& exp = n->children[1];
+						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
+							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
+						}
+					}
+					n->exp_value_type = gs->type;
+				} else {
+					//变量不存在
+					throw jass_parse_error(n->as_sub_input(0), "VAR_NO_EXISTS", name);
+				}
+
 				
 			}
 		}
@@ -911,6 +1042,7 @@ namespace jass {
 	};
 
 
+
 	template<typename Rule>
 	using selector = parse_tree::selector<
 		Rule,
@@ -933,11 +1065,19 @@ namespace jass {
 					arg_type
 		>,
 
+
+		global_content::on<global>,
+		parse_tree::store_content::on<
+			key_constant,
+			global_type,
+			global_name,
+			key_array
+		>,
+
 		local_content::on<local>,
 		parse_tree::store_content::on<
 			local_type,
-			local_name,
-			key_array
+			local_name
 		>,
 
 
@@ -965,6 +1105,7 @@ namespace jass {
 		>,
 
 		action_set_content::on<action_set>
+
 	>;
 
 	
@@ -1003,6 +1144,28 @@ namespace jass {
 		}
 	};
 
+	template<>
+	struct check_action<key_globals> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+			if (s.has_function) {
+				throw jass_parse_error(in, "ERROR_GLOBAL_AFTER_FUNCTION");
+			}
+		}
+	};
+
+	template<>
+	struct check_action<code_name> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+			auto name = in.string_view();
+	
+			auto fs = s.functions.find(name);
+			if (!fs) {
+				throw jass_parse_error(in, "FUNCTION_NO_EXISTS", name);
+			}
+		}
+	};
 
 	//自定义规则获取一行
 	template<typename ParseInput>
