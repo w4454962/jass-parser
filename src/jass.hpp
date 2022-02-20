@@ -176,11 +176,11 @@ namespace jass {
 
 	struct native_name: name{};
 	struct returns_type: name {};
-	struct native_statement : if_must<key_native, must<space, native_name, key_takes, args_statement, check_returns, space, returns_type>> {};
+	struct native_statement : seq<opt<key_constant>, key_native, must<space, native_name, key_takes, args_statement, check_returns, space, returns_type, newline>> {};
 
 	
 	struct function_name :name {};
-	struct function_statement : seq<key_function, must<space, function_name, key_takes, space, args_statement, check_returns, space, returns_type, newline>>{};
+	struct function_statement : seq<opt<key_constant>, key_function, must<space, function_name, key_takes, space, args_statement, check_returns, space, returns_type, newline>>{};
 	struct function_block : seq<local_list, action_list> {};
 
 	struct function : if_must<function_statement, function_block, key_endfunction> {};
@@ -288,6 +288,8 @@ namespace jass {
 
 		container<arg_state> args;
 		data_type returns_type;
+
+		bool is_const;
 	};
 
 	struct function_state : native_state
@@ -470,9 +472,19 @@ namespace jass {
 		template<typename ParseInput>
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
-			auto name = n->sub_string_view(0);
+
+			size_t name_index = 0, args_index = 1, returns_index = 2;
+			bool is_const = false;
+			if (n->children[0]->is_type<key_constant>()) {
+				name_index = 1;
+				args_index = 2;
+				returns_index = 3;
+				is_const = true;
+			}
+
+			auto name = n->sub_string_view(name_index);
 			if (s.is_keyword(name)) {//名字是关键字
-				throw jass_parse_error(n->as_sub_input(0), "ERROR_KEY_WORD", name);
+				throw jass_parse_error(n->as_sub_input(name_index), "ERROR_KEY_WORD", name);
 			}
 
 			std::vector<void*> check_list = { &s.natives, &s.functions, &s.globals };
@@ -480,7 +492,7 @@ namespace jass {
 			for (auto table : check_list) {
 				auto ptr = ((container<state_base>*)table)->find(name);
 				if (ptr) { //重复定义
-					auto input = n->as_sub_input(0);
+					auto input = n->as_sub_input(name_index);
 					auto pos = ptr->node->begin();
 					throw jass_parse_error(input, "ERROR_REDEFINE_FUNCTION", name, pos.source, pos.line);
 				}
@@ -503,7 +515,7 @@ namespace jass {
 			ns->name = name;
 			ns->save_node(n);
 
-			auto& args = n->children[1];
+			auto& args = n->children[args_index];
 			//参数数量以及类型
 			if (args->has_content()) {
 				for (auto& arg : args->children) {
@@ -533,11 +545,12 @@ namespace jass {
 				}
 			}
 
-			auto return_type = n->sub_string_view(2);
+			auto return_type = n->sub_string_view(returns_index);
 			if (!s.types.find(return_type)) { //返回类型未定义
-				throw jass_parse_error(n->as_sub_input(2), "ERROR_UNDEFINE_TYPE", return_type);
+				throw jass_parse_error(n->as_sub_input(returns_index), "ERROR_UNDEFINE_TYPE", return_type);
 			}
 
+			ns->is_const = is_const;
 			ns->returns_type = return_type;
 		}
 	};
@@ -925,7 +938,10 @@ namespace jass {
 
 						if (gs->is_const) { //修改constant类型的全局变量
 							throw jass_parse_error(n->as_sub_input(0), "ERROR_SET_CONSTANT", name);
-							
+						} 
+
+						if (fs->is_const && !gs->is_const) { //在const 的函数内部调用 非const的全局变量
+							throw jass_parse_error(n->as_sub_input(0), "ERROR_SET_IN_CONSTANT", name);
 						}
 					}
 					n->exp_value_type = gs->type;
@@ -979,6 +995,7 @@ namespace jass {
 				throw jass_parse_error(n->as_sub_input(0), "FUNCTION_NO_EXISTS", name);
 			}
 			
+
 			size_t param_count = 0;
 			size_t args_count = f->args.list.size();
 
@@ -1015,6 +1032,34 @@ namespace jass {
 					if (!s.is_extends_type(arg->type, param->exp_value_type)) {
 						throw jass_parse_error(param->as_memory_input(), "ERROR_WRONG_ARG", name, i + 1, arg->type, param->exp_value_type) ;
 					}
+				}
+			}
+
+			if (s.is_function_block) {//在函数内
+				auto in_func = s.functions.back();
+
+				if (in_func->is_const && !f->is_const) { //在常量函数里 不能调用非常量函数 
+					throw jass_parse_error(n->as_sub_input(0), "ERROR_CALL_IN_CONSTANT", name);
+				}
+
+			} else { //在函数外 也就是初始化全局变量的时候
+				switch (hash_s(name))
+				{
+				case "OrderId"s_hash:
+				case "OrderId2String"s_hash:
+				case "UnitId2String"s_hash:
+					//这几个会返回null 
+					throw jass_parse_error(n->as_sub_input(0), "WARNING_NULL_NATIVE_IN_GLOBAL", name);
+					break;
+				case "GetObjectName"s_hash:
+				case "CreateQuest"s_hash:
+				case "CreateMultiboard"s_hash:
+				case "CreateLeaderboard"s_hash:
+					//这几个会崩溃
+					throw jass_parse_error(n->as_sub_input(0), "WARNING_CRASH_NATIVE_IN_GLOBAL", name);
+					break;
+				default:
+					break;
 				}
 			}
 

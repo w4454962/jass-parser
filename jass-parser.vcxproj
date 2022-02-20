@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\stdafx.cpp" />
     <ClCompile Include="src\utils\unicode.cpp" />
   </ItemGroup>
   <ItemGroup>

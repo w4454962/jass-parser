@@ -24,6 +24,9 @@
     <ClCompile Include="src\utils\unicode.cpp">
       <Filter>src\utils</Filter>
     </ClCompile>
+    <ClCompile Include="src\stdafx.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\jass.hpp">
