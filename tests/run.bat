@@ -1,2 +1,2 @@
-pjass-latest.exe +rb aa.j
+pjass-latest.exe  aa.j
 pause

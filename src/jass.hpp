@@ -200,7 +200,7 @@ namespace jass {
 	{
 		std::string_view exp_value_type; //只有在exp节点才有值
 
-		std::string_view action_return_type; //只有在action节点时才有值
+		bool has_return = false; //只有在action节点时才有值
 
 		auto sub_string_view(size_t pos) {
 			return children[pos]->string_view();
@@ -314,6 +314,7 @@ namespace jass {
 		bool is_local_block = false;
 		bool is_action_set = false;
 		bool has_function = false;
+		bool has_return_any = false;
 
 		std::unordered_map<std::string_view, bool> keyword_map;
 
@@ -513,6 +514,7 @@ namespace jass {
 				s.functions.save(name, fs);
 				s.is_function_block = true;
 				s.has_function = true;
+				s.has_return_any = false;
 			}
 
 			ns->name = name;
@@ -1101,34 +1103,42 @@ namespace jass {
 	};
 
 
-	//检查if elseif 的条件类型
-	struct if_statement_content
-		: parse_tree::apply<if_statement_content>
+	//生成返回值类型 
+	struct action_return_content
+		: parse_tree::apply<action_return_content>
 	{
 		template<typename ParseInput>
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
-			
-			auto& exp = n->children[0];
+			std::string_view return_type = demangle<nothing>();
 
-			if (exp->exp_value_type != demangle<boolean>()) { //值类型 跟变量类型不符
-				throw jass_parse_error(exp->as_memory_input(), "ERROR_CONDITION_TYPE");
-			}
-			
-		}
-	};
 
-	//检查动作里是否有返回值类型
-	struct action_content
-		: parse_tree::apply<action_content>
-	{
-		template<typename ParseInput>
-		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
-		{
-			if (n->children.size() == 1) { //没有操作符的匹配
-				n = std::move(n->children.front());
-				return;
+			if (n->children.size() > 0) {
+				auto& exp = n->children[0];
+				return_type = exp->exp_value_type;
 			}
+
+			//检查当前函数的返回类型是否一致
+			auto fs = s.functions.back();
+
+			if (fs->returns_type != return_type) {
+				if (return_type == demangle<nothing>()) { //函数需要返回类型 但是返回空 
+					throw jass_parse_error(n->as_memory_input(), "ERROR_MISS_RETURN", fs->name, fs->returns_type);
+				}
+				else if (fs->returns_type == demangle<real>() && return_type == demangle<integer>()) {
+					//函数需要返回实数 但是却返回整数  结果是0.0
+					throw jass_parse_error(n->as_memory_input(), "ERROR_RETURN_INTEGER_AS_REAL", fs->name, fs->returns_type, return_type);
+
+				}
+				else if (!s.is_extends_type(fs->returns_type, return_type)) {
+
+					throw jass_parse_error(n->as_memory_input(), "ERROR_RETURN_TYPE", fs->name, fs->returns_type, return_type);
+				}
+			}
+
+			//标记有返回值
+			n->has_return = true;
+			s.has_return_any = true;
 		}
 	};
 
@@ -1140,67 +1150,95 @@ namespace jass {
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
 			for (auto& action : n->children) {
-				if (!action->action_return_type.empty()) {
-					n->action_return_type = action->action_return_type;
+				if (action->has_return) {
+					n->has_return = action->has_return;
+					break;
 				}
 			}
 		}
 	};
 
-	//生成返回值类型 
-	struct action_return_content
-		: parse_tree::apply<action_return_content>
+	
+	struct if_statement_content
+		: parse_tree::apply<if_statement_content>
 	{
 		template<typename ParseInput>
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
-			size_t size = n->children.size();
+			size_t actions_index;
 
-			std::string_view return_type = demangle<nothing>();
-			if (size > 0) {
+			if (n->children.size() == 2) {//检查if elseif 的条件类型
+
 				auto& exp = n->children[0];
-				return_type = exp->exp_value_type;
-			}
 
-			n->action_return_type = return_type;
+				if (exp->exp_value_type != demangle<boolean>()) { //值类型 跟变量类型不符
+					throw jass_parse_error(exp->as_memory_input(), "ERROR_CONDITION_TYPE");
+				}
+				actions_index = 1;
+			} else {
+				actions_index = 0;
+			}
+		
+			auto& actions = n->children[actions_index]; 
+
+			n->has_return = actions->has_return; // 将动作列表里的返回标记 向上传递给if分支
 		}
 	};
 
+	struct action_if_content
+		: parse_tree::apply<action_if_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			size_t count = 0;
+			//统计if的所有分支 返回标记数量
+			for (auto& node : n->children) {
+				if (node->has_return) {
+					count++;
+				}
+			}
+
+			//所有分支都有返回标记 && 包含else分支
+			if (count == n->children.size() && n->children.back()->is_type<else_statement>()) {
+				n->has_return = true;
+			}
+		}
+
+	};
+ 
 
 	//当函数里所有动作都分析完毕 检查是否有返回类型
-	struct function_block_content
-		: parse_tree::apply<function_block_content>
+	struct function_content
+		: parse_tree::apply<function_content>
 	{
 		template<typename ParseInput>
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
 			std::string_view return_type = demangle<nothing>();
-
-			auto& actions = n->children[0];
-
-			if (!actions->action_return_type.empty()) {
-				return_type = actions->action_return_type;
-			}
-
-
-			//检查当前函数的返回类型是否一致
 
 			auto fs = s.functions.back();
 
-			if (fs->returns_type != return_type) {
-				if (return_type == demangle<nothing>()) { //函数需要返回类型 但是返回空 
-					throw jass_parse_error(n->as_memory_input(), "ERROR_MISS_RETURN", fs->name, fs->returns_type);
+			auto& actions = n->children[1];
 
-				} else if (fs->returns_type == demangle<real>() && return_type == demangle<integer>()) {
-					//函数需要返回实数 但是却返回整数  结果是0.0
-					throw jass_parse_error(n->as_memory_input(), "ERROR_RETURN_INTEGER_AS_REAL", fs->name, fs->returns_type, return_type);
-
-				} else if(!s.is_extends_type(fs->returns_type, return_type)) {
-
-					throw jass_parse_error(n->as_memory_input(), "ERROR_RETURN_TYPE", fs->name, fs->returns_type, return_type);
+			bool has_return = false;
+			//遍历函数的所有动作 只要其中之一有返回标记 当前函数就有返回值
+			for (auto& node : actions->children) {
+				if (node->has_return) {
+					has_return = true;
+					break;
 				}
 			}
+			
+			if (!has_return && fs->returns_type != demangle<nothing>()) { //没有返回值 且函数返回类型不是nothing
 
+				if (s.has_return_any) {
+					throw jass_parse_error(n->as_sub_input(2), "ERROR_RETURN_IN_ALL", fs->name, fs->returns_type);
+				} else {
+					throw jass_parse_error(n->as_sub_input(2), "ERROR_MISS_RETURN", fs->name, fs->returns_type);
+				}
+				
+			}
 		}
 	};
 
@@ -1236,7 +1274,9 @@ namespace jass {
 
 			exp_var_name,
 			exp_call_name,
-			exp_call_args
+			exp_call_args,
+
+			key_endfunction
 
 		>,
 
@@ -1263,15 +1303,15 @@ namespace jass {
 
 		action_set_content::on<action_set>,
 
-		if_statement_content::on<if_statement, elseif_statement>,
-
 		action_return_content::on<action_return>,
-
-		action_content::on<action>,
 
 		action_list_content::on<action_list>,
 
-		function_block_content::on<function_block>
+		if_statement_content::on<if_statement, elseif_statement, else_statement>,
+
+		action_if_content::on<action_if>, 
+
+		function_content::on<function>
 
 	>;
 
