@@ -81,6 +81,7 @@ namespace jass {
 	struct code : seq<key_function, space, code_name> {};
 
 	struct null : key_null {};
+	struct nothing :key_nothing {};
 	struct value : sor<null, boolean, string, real, integer,  code> {};
 
 
@@ -154,16 +155,16 @@ namespace jass {
 
 	struct action_call :seq<opt<key_debug>, key_call, exp_call, newline> {};
 	struct action_set :seq<key_set, exp_var, assign, exp, newline> {};
-	struct action_return : seq<key_return, sor<opt<exp>,newline>> {};
+	struct action_return : seq<key_return, opt<exp>,newline> {};
 	struct action_exitloop : seq<key_exitwhen, exp, newline> {};
 
-	struct if_statement : seq<key_if, exp, key_then, newline, action_list> {};
-	struct elseif_statement : seq<key_elseif, exp, key_then, newline, action_list> {};
-	struct else_statement : seq<key_else, newline, action_list> {};
+	struct if_statement : if_must<key_if, exp, key_then, newline, action_list> {};
+	struct elseif_statement : if_must<key_elseif, exp, key_then, newline, action_list> {};
+	struct else_statement : if_must<key_else, newline, action_list> {};
 
-	struct action_if : seq<if_statement, star<elseif_statement>, opt<else_statement>, key_endif> {};
+	struct action_if : seq<if_statement, star<elseif_statement>, opt<else_statement>, must<key_endif>, newline> {};
 
-	struct action_loop : if_must<key_loop, must<action_list, key_endloop>> {};
+	struct action_loop : if_must<key_loop, must<action_list, key_endloop, newline>> {};
 
 	struct action : sor<action_call, action_set, action_return, action_exitloop, action_if, action_loop> {};
 
@@ -171,7 +172,7 @@ namespace jass {
 	struct arg_type : name {};
 	struct arg_name: name {};
 	struct arg_statement : seq<space, arg_type, space, arg_name> {};
-	struct args_statement : seq < sor < key_nothing,  seq<arg_statement, star<seq<comma, arg_statement>> >> > {};
+	struct args_statement : seq < sor < nothing,  seq<arg_statement, star<seq<comma, arg_statement>> >> > {};
 	struct check_returns : sor<key_returns, if_must<key_return, ERR("ERROR_RETURN_AS_RETURNS")>> {};
 
 	struct native_name: name{};
@@ -197,7 +198,9 @@ namespace jass {
 	struct jass_node :
 		parse_tree::basic_node<jass_node>
 	{
-		std::string_view exp_value_type;
+		std::string_view exp_value_type; //只有在exp节点才有值
+
+		std::string_view action_return_type; //只有在action节点时才有值
 
 		auto sub_string_view(size_t pos) {
 			return children[pos]->string_view();
@@ -600,7 +603,7 @@ namespace jass {
 			auto check_type = [&](size_t pos) {
 				auto& node = n->children[pos];
 				auto type = node->string_view();
-				if (!s.types.find(type)) {//局部变量类型不存在
+				if (!s.types.find(type)) {//全局变量类型不存在
 					throw jass_parse_error(node->as_memory_input(), "ERROR_UNDEFINE_TYPE", type);
 				}
 				return type;
@@ -899,14 +902,19 @@ namespace jass {
 				} else if (auto ls = fs->locals.find(name); ls) {
 					if (has_index && !ls->is_array) { //局部变量不需要索引
 						throw jass_parse_error(n->as_memory_input(), "ERROR_WASTE_INDEX", name);
+
 					}else if (!has_index && ls->is_array) { //局部数组缺少索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_NO_INDEX", name);
+
 					}else if (has_index && ls->is_array) {
 						auto& exp = n->children[1];
+
 						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
 							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
+
 						}else if (s.is_local_block)  { //在局部变量申明区使用未初始化的局部数组 
 							throw jass_parse_error(n->as_sub_input(0), "ERROR_GET_UNINIT", name);
+
 						}
 					}
 
@@ -924,10 +932,13 @@ namespace jass {
 				} else if (auto gs = s.globals.find(name); gs) {
 					if (has_index && !gs->is_array) { //全局变量不需要索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_WASTE_INDEX", name);
+
 					} else if (!has_index && gs->is_array) { //全局数组缺少索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_NO_INDEX", name);
+
 					} else if (has_index && gs->is_array) {
 						auto& exp = n->children[1];
+
 						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
 							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
 						}
@@ -956,10 +967,13 @@ namespace jass {
 				if (auto gs = s.globals.find(name); gs) {
 					if (has_index && !gs->is_array) { //全局变量不需要索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_WASTE_INDEX", name);
+
 					} else if (!has_index && gs->is_array) { //全局数组缺少索引
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_NO_INDEX", name);
+
 					} else if (has_index && gs->is_array) {
 						auto& exp = n->children[1];
+
 						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
 							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
 						}
@@ -1087,19 +1101,120 @@ namespace jass {
 	};
 
 
+	//检查if elseif 的条件类型
+	struct if_statement_content
+		: parse_tree::apply<if_statement_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			
+			auto& exp = n->children[0];
+
+			if (exp->exp_value_type != demangle<boolean>()) { //值类型 跟变量类型不符
+				throw jass_parse_error(exp->as_memory_input(), "ERROR_CONDITION_TYPE");
+			}
+			
+		}
+	};
+
+	//检查动作里是否有返回值类型
+	struct action_content
+		: parse_tree::apply<action_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			if (n->children.size() == 1) { //没有操作符的匹配
+				n = std::move(n->children.front());
+				return;
+			}
+		}
+	};
+
+	//检查动作块里是否有返回值类型
+	struct action_list_content
+		: parse_tree::apply<action_list_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			for (auto& action : n->children) {
+				if (!action->action_return_type.empty()) {
+					n->action_return_type = action->action_return_type;
+				}
+			}
+		}
+	};
+
+	//生成返回值类型 
+	struct action_return_content
+		: parse_tree::apply<action_return_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			size_t size = n->children.size();
+
+			std::string_view return_type = demangle<nothing>();
+			if (size > 0) {
+				auto& exp = n->children[0];
+				return_type = exp->exp_value_type;
+			}
+
+			n->action_return_type = return_type;
+		}
+	};
+
+
+	//当函数里所有动作都分析完毕 检查是否有返回类型
+	struct function_block_content
+		: parse_tree::apply<function_block_content>
+	{
+		template<typename ParseInput>
+		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
+		{
+			std::string_view return_type = demangle<nothing>();
+
+			auto& actions = n->children[0];
+
+			if (!actions->action_return_type.empty()) {
+				return_type = actions->action_return_type;
+			}
+
+
+			//检查当前函数的返回类型是否一致
+
+			auto fs = s.functions.back();
+
+			if (fs->returns_type != return_type) {
+				if (return_type == demangle<nothing>()) { //函数需要返回类型 但是返回空 
+					throw jass_parse_error(n->as_memory_input(), "ERROR_MISS_RETURN", fs->name, fs->returns_type);
+
+				} else if (fs->returns_type == demangle<real>() && return_type == demangle<integer>()) {
+					//函数需要返回实数 但是却返回整数  结果是0.0
+					throw jass_parse_error(n->as_memory_input(), "ERROR_RETURN_INTEGER_AS_REAL", fs->name, fs->returns_type, return_type);
+
+				} else if(!s.is_extends_type(fs->returns_type, return_type)) {
+
+					throw jass_parse_error(n->as_memory_input(), "ERROR_RETURN_TYPE", fs->name, fs->returns_type, return_type);
+				}
+			}
+
+		}
+	};
 
 	template<typename Rule>
 	using selector = parse_tree::selector<
 		Rule,
 
 		type_extends_content::on<type_extends>,
-		parse_tree::store_content::on<
-			type_name,
-			type_parent_name
-		>,
 
 		function_statement_content::on<native_statement, function_statement>,
 		parse_tree::store_content::on<
+			type_name,
+			type_parent_name,
+
 			function_name,
 			native_name,
 			returns_type,
@@ -1107,25 +1222,30 @@ namespace jass {
 			args_statement,
 				arg_statement,
 					arg_name,
-					arg_type
+					arg_type,
+
+			key_constant,
+			global_type,
+			global_name,
+			key_array,
+
+			local_type,
+			local_name,
+
+			add, sub, mul, div, mod, gt, ge, lt, le, eq, ue, exp_or, exp_and,
+
+			exp_var_name,
+			exp_call_name,
+			exp_call_args
+
 		>,
 
 
 		global_content::on<global>,
-		parse_tree::store_content::on<
-			key_constant,
-			global_type,
-			global_name,
-			key_array
-		>,
+	
 
 		local_content::on<local>,
-		parse_tree::store_content::on<
-			local_type,
-			local_name
-		>,
-
-
+	
 		exp_content::on<
 			exp,
 			exp_check_and,
@@ -1135,28 +1255,30 @@ namespace jass {
 			exp_check_mul_div
 		>,
 	
-		parse_tree::store_content::on<
-			add, sub, mul, div, mod, gt, ge, lt, le, eq, ue, exp_or, exp_and
-		>,
-
 		value_content::on<null, boolean, string, real, integer, code>,
+
 		var_content::on<exp_var>,
+
 		exp_call_content::on<exp_call>,
 
-		parse_tree::store_content::on<
-			exp_var_name,
-			exp_call_name,
-			exp_call_args
-		>,
+		action_set_content::on<action_set>,
 
-		action_set_content::on<action_set>
+		if_statement_content::on<if_statement, elseif_statement>,
+
+		action_return_content::on<action_return>,
+
+		action_content::on<action>,
+
+		action_list_content::on<action_list>,
+
+		function_block_content::on<function_block>
 
 	>;
 
 	
 	template< typename Rule >
 	struct check_action 
-		:nothing<Rule>
+		:tao::pegtl::nothing<Rule>
 	{};
 
 	template<>
@@ -1222,7 +1344,7 @@ namespace jass {
 		input_t in2(in.at(p), in.end(), "");
 		using line = until<line_char, bytes<1>>;
 
-		(void)normal< line >::match< apply_mode::nothing, rewind_mode::dontcare, nothing, normal >(in2);
+		(void)normal< line >::match< apply_mode::nothing, rewind_mode::dontcare, tao::pegtl::nothing, normal >(in2);
 
 		return std::string_view(b, static_cast<std::size_t>(in2.current() - b));
 	}

@@ -1,53 +1,30 @@
 
-constant native OrderId                     takes string  orderIdString     returns integer
-constant native OrderId2String              takes integer orderId           returns string
-constant native UnitId2String               takes integer unitId            returns string
-constant native GetObjectName               takes integer objectId          returns string
+type unit extends handle
 
-globals 
-   // integer test1 = OrderId("")
-    string str2 = GetObjectName("ss")
 
-    constant integer test2 = 1
-    code c
-endglobals 
-
-constant native first takes nothing returns integer 
- function bb takes nothing returns integer
+function func takes nothing returns integer 
     return 0
 endfunction 
 
-constant function aa takes nothing returns integer
-    call bb()
-    return 0
-endfunction 
-
-    
 
 function test5 takes handle test2, handle ab returns integer 
-    local string test3 
-    local integer num = aa()
-    //set i = i[1] + 20
+    local boolean b = true
 
-    //local string array buf
+    if true then
+        return ab
+        return 0
+    else     
+        return function func
+        return ab
+    endif 
 
-    //local string s =  "a" + test2()
-    return 0
+    return "aaa"
+
 endfunction
 
+function foo takes handle h returns unit
+	return h
+	return null
+endfunction
 
-
-    
-
-//globals
-//    integer a 
-//    integer array b 
-//
-//endglobals
-//
-//
-//function bbb takes handle h, handle xx returns nothing
-//
-//endfunction 
-
-
+   
