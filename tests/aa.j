@@ -1,13 +1,13 @@
 
-type unit extends handle
 
-
-function func takes nothing returns handle 
-    return null
+function func takes nothing returns integer 
+    return 0
 endfunction 
 
 
-function test5 takes unit test2, handle ab returns handle 
-   
-        return test2
+function test5 takes handle test2, handle ab returns integer 
+    local integer i = 10 
+    local integer k = -(-(i)) 
+
+    
 endfunction

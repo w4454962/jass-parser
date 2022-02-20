@@ -47,15 +47,14 @@ bool tests(const fs::path& tests_path) {
 
 	std::vector<fs::path> paths;
 
-	//for (const auto i : fs::recursive_directory_iterator(tests_path)) {
-	//	if (i.is_regular_file() && (i.path().extension() == ".j" || i.path().extension() == ".J")) {
-	//		paths.push_back(i.path());
-	//	}
-	//}
+	for (const auto i : fs::recursive_directory_iterator(tests_path)) {
+		if (i.is_regular_file() && (i.path().extension() == ".j" || i.path().extension() == ".J")) {
+			paths.push_back(i.path());
+		}
+	}
 
-	 
 	//paths.push_back(tests_path /"should-fail" / "code不能有参数.j");
-	paths.push_back(tests_path / "aa.j");
+	//paths.push_back(tests_path / "aa.j");
 	
 	int i = 0;
 
@@ -69,8 +68,10 @@ bool tests(const fs::path& tests_path) {
 
 			jass::jass_state state;
 			
-			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
+			std::cout << path << std::endl;
 
+			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
+		
 		}
 		catch (const jass::jass_parse_error& e) {
 			const auto p = e.positions().front();
@@ -78,19 +79,19 @@ bool tests(const fs::path& tests_path) {
 			
 			output_error(p, e.width, jass::line_at(in, p), e.message());
 
-			i++;
-			if (i > 1) {
-				break;
-			}
+			//i++;
+			//if (i > 1) {
+			//	break;
+			//}
 		} catch(const tao::pegtl::parse_error& e) {
 			const auto p = e.positions().front();
 
 			output_error(p, 1, jass::line_at(in, p), e.message());
 
-			i++;
-			if (i > 1) {
-				break;
-			}
+			//i++;
+			//if (i > 1) {
+			//	break;
+			//}
 			
 		}
 		
