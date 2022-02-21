@@ -208,7 +208,7 @@ namespace jass {
 
 	struct ext_action : seq<action, ERR("ERROR_ACTION_IN_CHUNK")>{};
 
-	struct chunk : sor<type_extends, globals, native_statement, function, newline, ext_action, ERR("SYNTAX_ERROR")> {};
+	struct chunk : sor<type_extends, globals, native_statement, function, newline, ext_action> {};
 
 	struct jass : star<chunk> {};
 

@@ -56,11 +56,13 @@ void output_error(const position& p, size_t width, std::string_view line, std::s
 
 			std::string file_str = ss.str();
 			file_str = std::regex_replace(file_str, std::regex("\\(.+\\)"), "");
-			if (file_str != err) {
+			//if (file_str != err) {
+			//	std::cout << error << std::endl;
+
 				std::cout 
 					<< "<" << err << ">" << std::endl
 					<< "{" << file_str << "}" << std::endl;
-			}
+			//}
 
 			file.close();
 		}
