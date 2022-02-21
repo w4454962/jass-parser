@@ -24,13 +24,44 @@ void output_error(const position& p, size_t width, std::string_view line, std::s
 
 	std::string err = jass::error_format(msg, args...);
 
+
+	err = std::regex_replace(err, std::regex("E:\\\\jass\\-parser\\\\tests\\\\should\\-fail\\\\"), "");
+
+	
+
 	std::vector<char> of(p.column -1, ' ');
 	std::vector<char> tip(width, '^');
 
 	std::string code = std::format("{}\n{}{}", line, std::string(of.begin(), of.end()), std::string(tip.begin(), tip.end()));
 	std::string error = jass::error_format("ERROR_POS", err, p.source, p.line, code);
 
-	std::cout << error << std::endl;
+	//std::cout << error << std::endl;
+
+	std::string src = std::string(p.source.begin(), p.source.end());
+
+	fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
+
+	std::cout << path << std::endl << std::endl;
+
+	if (fs::exists(path)) {
+		std::ifstream file(path, std::ios::binary);
+		std::stringstream ss;
+
+		if (file.is_open()) {
+			ss << file.rdbuf();
+
+			std::string file_str = ss.str();
+			file_str = std::regex_replace(file_str, std::regex("\\(.+\\)"), "");
+			if (file_str != err) {
+				std::cout 
+					<< "<" << err << ">" << std::endl
+					<< "{" << file_str << "}" << std::endl;
+			}
+
+			file.close();
+		}
+	}
+
 }
 
 
@@ -53,9 +84,9 @@ bool tests(const fs::path& tests_path) {
 		}
 	}
 
-	//paths.push_back(tests_path /"should-fail" / "code不能有参数.j");
-	//paths.push_back(tests_path / "aa.j");
-	
+	//paths = { fs::path(tests_path / "should-fail" / "缺少endif.j") };
+	 //paths = { fs::path(tests_path / "aa.j") };
+
 	int i = 0;
 
 	for (auto& path : paths) {
@@ -72,27 +103,17 @@ bool tests(const fs::path& tests_path) {
 
 			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
 		
-		}
-		catch (const jass::jass_parse_error& e) {
+		} catch (const jass::jass_parse_error& e) {
 			const auto p = e.positions().front();
 
 			
 			output_error(p, e.width, jass::line_at(in, p), e.message());
 
-			//i++;
-			//if (i > 1) {
-			//	break;
-			//}
 		} catch(const tao::pegtl::parse_error& e) {
 			const auto p = e.positions().front();
 
 			output_error(p, 1, jass::line_at(in, p), e.message());
 
-			//i++;
-			//if (i > 1) {
-			//	break;
-			//}
-			
 		}
 		
 	}
@@ -105,27 +126,33 @@ void init_config() {
 	
 	fs::path path = fs::current_path() / "locale" / "zh-CN" / "parser.lng";
 
-	if (!fs::exists(path)) {
-		return;
-	}
-	std::ifstream file(path);
+	tao::pegtl::file_input in(path);
 
-	if (!file.is_open()) {
-		return;
-	}
-
-	std::string line, key;
-	while (std::getline(file, line)) {
-		std::smatch result;
-		if (std::regex_match(line, result, std::regex("^\\[(.+)\\]$"))) {
-			key = result[1];
-		} else if (!key.empty()) {
-			std::string& old = jass_error_map[key];
-			old += "\n" + line;
+	try {
+		std::string line, key;
+		while (1) {
+			std::string_view line_view = jass::line_at(in, in.position());
+			line = std::string(line_view.begin(), line_view.end() - 1);
+			std::smatch result;
+			if (std::regex_match(line, result, std::regex("^\\[(.+)\\]$"))) {
+				key = result[1];
+			} else if (!key.empty()) {
+				std::string& old = jass_error_map[key];
+				if (old.empty()) {
+					old += line;
+				} else {
+					old += "\n" + line;
+				}
+			}
+			if (line_view.data() + line_view.size() == in.end()) {
+				break;
+			}
+			in.bump_to_next_line(line_view.size());
 		}
+	} catch(...) {
+	
 	}
 
-	file.close();
 	
 	for (auto&& [k, v] : jass_error_map) {
 		//将旧版本的格式化代码 修改成新版本的
@@ -134,9 +161,9 @@ void init_config() {
 		v = std::regex_replace(v, std::regex("%s"), "{}");
 	} 
 	 
-	for (auto&& [k, v] : jass_error_map) {
-		//std::cout << k << ":" << v << std::endl;
-	}
+	//for (auto&& [k, v] : jass_error_map) {
+	//	std::cout << k << ":" << v << std::endl;
+	//}
 }
 
 int main(int argn, char** argv) {

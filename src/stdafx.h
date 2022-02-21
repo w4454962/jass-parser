@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <stack>
 #define __cpp_lib_format
 
 #include <format>
