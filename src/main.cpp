@@ -178,6 +178,8 @@ std::unique_ptr<jass::jass_node> check_script( file_input<>& in, jass::jass_stat
 		
 	try {
 
+		state.has_function = false;
+
 		auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
 		std::cout << in.source() <<  "  pass" << std::endl;
 
@@ -203,6 +205,8 @@ void check() {
 
 	jass::jass_state state;
 
+	clock_t start = clock();
+
 	file_input common(path / "common.j");
 	file_input blizzard(path / "blizzard.j");
 	file_input war3map(path / "war3map.j");
@@ -211,8 +215,11 @@ void check() {
 	check_script(common, state);
 	check_script(blizzard, state);
 
+
+
 	auto war3map_ast = check_script(war3map, state);
 
+	std::cout << "耗时 : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " 秒" << std::endl;;
 
 }
 int main(int argn, char** argv) {

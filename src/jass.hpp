@@ -61,9 +61,7 @@ namespace jass {
 
 	struct boolean : sor<key_true, key_false> {};
 
-	struct digits : plus< digit> {};
-
-	struct real : sor<seq<space, opt<one< '-' >>, space, digits, one<'.'>, digits>, seq<one<'.'>, ERR("ERROR_REAL")>> {};
+	struct real : sor<seq<space, opt<one< '-' >>, space, plus<digit>, one<'.'>, star<digit>>, seq<one<'.'>, ERR("ERROR_REAL")>> {};
 
 
 	struct char_1 : sor<escaped, line_char, not_one<'\''>> {};
@@ -77,7 +75,7 @@ namespace jass {
 	struct integer256 : seq<space, char_256> {};
 	struct integer16 : seq<sor<istring<'0', 'x'>, one<'$'>>, sor<plus<xdigit>, ERR("ERROR_INT16")>> {};
 	struct integer8 : seq<istring<'0'>, plus<odigit>> {};
-	struct integer : seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, digits>> {};
+	struct integer : seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, plus<digit>>> {};
 
 
 	struct name : seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>{};
@@ -330,8 +328,6 @@ namespace jass {
 
 	struct jass_state
 	{
-		std::shared_ptr<std::string> source;
-
 		container<type_state> types;
 		container<global_state> globals;
 		container<native_state> natives;
@@ -404,10 +400,6 @@ namespace jass {
 			//关键字文本合集 
 			BOOST_PP_SEQ_FOR_EACH(MACRO_DEF, MACRO_INPUT, KEYWORD_ALL)
 	
-		}
-
-		void set_source(const std::string& s) {
-			source = std::make_shared<std::string>(s);
 		}
 
 	};
