@@ -41,6 +41,10 @@ void output_error(const position& p, size_t width, std::string_view line, std::s
 
 	fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
 
+	if (!fs::exists(path)) {
+		path = std::regex_replace(src, std::regex("\\.j"), ".warn");
+	}
+
 	std::cout << path << std::endl << std::endl;
 
 	if (fs::exists(path)) {
@@ -84,7 +88,7 @@ bool tests(const fs::path& tests_path) {
 		}
 	}
 
-	//paths = { fs::path(tests_path / "should-fail" / "缺少endif.j") };
+	//paths = { fs::path(tests_path / "should-fail" / "逻辑错误-1.j") };
 	 //paths = { fs::path(tests_path / "aa.j") };
 
 	int i = 0;

@@ -16,7 +16,9 @@ namespace jass {
 
 	struct space : star<sor<comment, whilespace>> {};
 
-	struct newline : seq<space, line_char> {};
+	struct newline : seq<space, line_char> {
+		static constexpr const char* error_message = "MISS_NL";
+	};
 
 	struct igone : star<not_at<line_char>> {};
 
@@ -135,12 +137,12 @@ namespace jass {
 	struct exp_or : key_or {};
 	struct exp_and : key_and {};
 
-	struct exp_check_mul_div : seq<exp_unit, star<seq<space, exp_mul_div, exp_unit>>> {};
-	struct exp_check_add_sub : seq<exp_check_mul_div, star<seq<space, exp_add_sub, exp_check_mul_div>>> {};
-	struct exp_check_not : seq<space, star<exp_not>, exp_check_add_sub> {};
-	struct exp_check_compare : seq<exp_check_not, star<seq<space, exp_compare_operator, exp_check_not>>> {};
-	struct exp_check_or : seq<exp_check_compare, star<seq<space, exp_or, exp_check_compare>>> {};
-	struct exp_check_and : seq<exp_check_or, star<seq<space, exp_and, exp_check_or>>> {};
+	struct exp_check_mul_div : seq<exp_unit, star<seq<space, exp_mul_div, sor<exp_unit, ERR("ERROR_MISS_EXP")>>>> {};
+	struct exp_check_add_sub : seq<exp_check_mul_div, star<seq<space, exp_add_sub, sor<exp_check_mul_div, ERR("ERROR_MISS_EXP")>>>> {};
+	struct exp_check_not : seq<space, sor<seq<exp_not, exp_check_add_sub>, seq<exp_not, ERR("ERROR_MISS_EXP")>, exp_check_add_sub>> {};
+	struct exp_check_compare : seq<exp_check_not, star<seq<space, exp_compare_operator, sor<exp_check_not, ERR("ERROR_MISS_EXP")>>>> {};
+	struct exp_check_or : seq<exp_check_compare, star<seq<space, exp_or, sor<exp_check_compare, ERR("ERROR_MISS_EXP")>>>> {};
+	struct exp_check_and : seq<exp_check_or, star<seq<space, exp_and, sor<exp_check_or, ERR("ERROR_MISS_EXP")>>>> {};
 	struct exp : exp_check_and {};
 
 	struct type_name: name {};
@@ -155,26 +157,30 @@ namespace jass {
 
 	struct local_name:name {};
 	struct local_type:name {};
-	struct local : if_must<key_local, space, local_type ,opt<key_array>, space, local_name, opt<seq<assign, exp>>, newline> {};
+	struct local : if_must<key_local, space, local_type ,opt<key_array>, space, local_name, opt<seq<assign, exp>>, must<newline>> {};
 	struct local_list : star<sor<seq<key_constant, ERR("ERROR_CONSTANT_LOCAL")>, local, newline>> {};
 
 	struct action;
 	struct action_list : star<sor<action, newline, seq<key_local, ERR("ERROR_LOCAL_IN_FUNCTION")>>> {};
 
-	struct action_call :seq<opt<key_debug>, key_call, exp_call, newline> {};
-	struct action_set :seq<key_set, exp_var, assign, exp, newline> {};
-	struct action_return : seq<key_return, opt<exp>,newline> {};
-	struct action_exitwhen : seq<key_exitwhen, exp, newline> {};
+	struct action_set_var : seq< exp_var, assign, exp>{};
 
-	struct if_statement : if_must<key_if, exp, key_then, newline, action_list> {};
-	struct elseif_statement : if_must<key_elseif, exp, key_then, newline, action_list> {};
-	struct else_statement : if_must<key_else, newline, action_list> {};
+	struct action_call :seq<opt<key_debug>, key_call, sor<exp_call, seq<action_set_var, ERR("ERROR_CALL_AS_SET")>>> {};
+	struct action_set :seq<key_set, action_set_var, must<newline>> {};
+	struct action_return : seq<key_return, opt<exp>, must<newline>> {};
+	struct action_exitwhen : seq<key_exitwhen, exp, must<newline>> {};
 
-	struct endif: opt<seq<key_endif, newline>>{};
+	struct then_statement: sor<seq<seq<not_at<key_then>,exp>, key_then>, ERR("ERROR_MISS_THEN")> {};
+
+	struct if_statement : if_must<key_if, then_statement, must<newline>, action_list> {};
+	struct elseif_statement : if_must<key_elseif, then_statement, must<newline>, action_list> {};
+	struct else_statement : if_must<key_else, must<newline>, action_list> {};
+
+	struct endif: opt<seq<key_endif, must<newline>>>{};
 
 	struct action_if : seq<if_statement, star<elseif_statement>, opt<else_statement>, endif> {};
 
-	struct endloop: opt<seq<key_endloop, newline>>{};
+	struct endloop: opt<seq<key_endloop, must<newline>>>{};
 	struct action_loop : if_must<key_loop, must<action_list, endloop>> {};
 
 	struct action : sor<action_call, action_set, action_return, action_exitwhen, action_if, action_loop> {};
@@ -200,7 +206,9 @@ namespace jass {
 
 	struct function : if_must<function_statement, function_block> {};
 
-	struct chunk : sor<type_extends, globals, native_statement, function, newline> {};
+	struct ext_action : seq<action, ERR("ERROR_ACTION_IN_CHUNK")>{};
+
+	struct chunk : sor<type_extends, globals, native_statement, function, newline, ext_action, ERR("SYNTAX_ERROR")> {};
 
 	struct jass : star<chunk> {};
 
@@ -333,6 +341,8 @@ namespace jass {
 		bool is_local_block = false;
 		bool is_loop_block = false;
 		bool is_action_set = false;
+		bool is_action_call = false;
+
 		bool has_function = false;
 		bool has_return_any = false;
 
@@ -715,6 +725,11 @@ namespace jass {
 				if (s.is_keyword(name)) {//局部变量名字是关键字
 					throw jass_parse_error(node->as_memory_input(), "ERROR_KEY_WORD", name);
 				}
+				
+				if (s.types.find(name)) {//局部变量名字跟类型重复
+					throw jass_parse_error(node->as_memory_input(), "ERROR_DEFINE_NATIVE_TYPE", name);
+				}
+
 
 				auto ptr = fs->args.find(name);
 				if (ptr) { //局部变量跟参数重名
@@ -971,7 +986,7 @@ namespace jass {
 			auto& exp = n->children[1];
 
 			if ((exp->exp_value_type != demangle<real>()) && (exp->exp_value_type != demangle<integer>())) {
-				throw jass_parse_error(exp->as_memory_input(), "ERROR_NEG", exp->string_view());
+				throw jass_parse_error(exp->as_memory_input(), "ERROR_NEG", exp->exp_value_type);
 			}
 		
 			n->exp_value_type = exp->exp_value_type;
@@ -1056,7 +1071,7 @@ namespace jass {
 
 						if (gs->is_const) { //修改constant类型的全局变量
 							throw jass_parse_error(n->as_sub_input(0), "ERROR_SET_CONSTANT", name);
-						} 
+						}
 
 						if (fs->is_const && !gs->is_const) { //在const 的函数内部调用 非const的全局变量
 							throw jass_parse_error(n->as_sub_input(0), "ERROR_SET_IN_CONSTANT", name);
@@ -1064,7 +1079,12 @@ namespace jass {
 
 					}
 					n->exp_value_type = gs->type;
+				} else if (auto fs = s.functions.find(name); fs) {
+					throw jass_parse_error(n->as_sub_input(0), "ERROR_SET_AS_CALL");
+
 				} else {
+					
+
 					//变量不存在
 					throw jass_parse_error(n->as_sub_input(0), "VAR_NO_EXISTS", name);
 				}
@@ -1493,7 +1513,14 @@ namespace jass {
 		}
 	};
 
-
+	template<>
+	struct check_action<key_call> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+			s.is_action_call = true;
+		}
+	};
+	
 	
 
 	template<>
@@ -1616,6 +1643,7 @@ namespace jass {
 			}
 		}
 	};
+
 
 	
 
