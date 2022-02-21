@@ -35,7 +35,7 @@ void output_error(const position& p, size_t width, std::string_view line, std::s
 	std::string code = std::format("{}\n{}{}", line, std::string(of.begin(), of.end()), std::string(tip.begin(), tip.end()));
 	std::string error = jass::error_format("ERROR_POS", err, p.source, p.line, code);
 
-	//std::cout << error << std::endl;
+	std::cout << error << std::endl;
 
 	std::string src = std::string(p.source.begin(), p.source.end());
 
@@ -74,57 +74,57 @@ void output_error(const position& p, size_t width, std::string_view line, std::s
 
 
 
-bool tests(const fs::path& tests_path) {
-
-	std::cout << "each path " << tests_path << std::endl;
-
-	if (!fs::exists(tests_path)) {
-		return 0;
-	}
-
-	std::vector<fs::path> paths;
-
-	for (const auto i : fs::recursive_directory_iterator(tests_path)) {
-		if (i.is_regular_file() && (i.path().extension() == ".j" || i.path().extension() == ".J")) {
-			paths.push_back(i.path());
-		}
-	}
-
-	//paths = { fs::path(tests_path / "should-fail" / "逻辑错误-1.j") };
-	 //paths = { fs::path(tests_path / "aa.j") };
-
-	int i = 0;
-
-	for (auto& path : paths) {
-		
-		tao::pegtl::file_input in(path);
-
-		
-		try {
-			std::string str;
-
-			jass::jass_state state;
-	
-			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
-			std::cout << path <<  "  pass" << std::endl;
-
-		} catch (const jass::jass_parse_error& e) {
-			const auto p = e.positions().front();
-
-			
-			output_error(p, e.width, jass::line_at(in, p), e.message());
-
-		} catch(const tao::pegtl::parse_error& e) {
-			const auto p = e.positions().front();
-
-			output_error(p, 1, jass::line_at(in, p), e.message());
-
-		}
-		
-	}
-
-	return 1;
-}
+//bool tests(const fs::path& tests_path) {
+//
+//	std::cout << "each path " << tests_path << std::endl;
+//
+//	if (!fs::exists(tests_path)) {
+//		return 0;
+//	}
+//
+//	std::vector<fs::path> paths;
+//
+//	for (const auto i : fs::recursive_directory_iterator(tests_path)) {
+//		if (i.is_regular_file() && (i.path().extension() == ".j" || i.path().extension() == ".J")) {
+//			paths.push_back(i.path());
+//		}
+//	}
+//
+//	//paths = { fs::path(tests_path / "should-fail" / "逻辑错误-1.j") };
+//	 //paths = { fs::path(tests_path / "aa.j") };
+//
+//	int i = 0;
+//
+//	for (auto& path : paths) {
+//		
+//		tao::pegtl::file_input in(path);
+//
+//		
+//		try {
+//			std::string str;
+//
+//			jass::jass_state state;
+//	
+//			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
+//			std::cout << path <<  "  pass" << std::endl;
+//
+//		} catch (const jass::jass_parse_error& e) {
+//			const auto p = e.positions().front();
+//
+//			
+//			output_error(p, e.width, jass::line_at(in, p), e.message());
+//
+//		} catch(const tao::pegtl::parse_error& e) {
+//			const auto p = e.positions().front();
+//
+//			output_error(p, 1, jass::line_at(in, p), e.message());
+//
+//		}
+//		
+//	}
+//
+//	return 1;
+//}
 
 
 void init_config() {
@@ -171,6 +171,50 @@ void init_config() {
 	//}
 }
 
+
+
+std::unique_ptr<jass::jass_node> check_script( file_input<>& in, jass::jass_state& state)
+{
+		
+	try {
+
+		auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
+		std::cout << in.source() <<  "  pass" << std::endl;
+
+		return std::move(root);
+
+	} catch (const jass::jass_parse_error& e) {
+		const auto p = e.positions().front();
+
+		
+		output_error(p, e.width, jass::line_at(in, p), e.message());
+
+	} catch(const tao::pegtl::parse_error& e) {
+		const auto p = e.positions().front();
+
+		output_error(p, 1, jass::line_at(in, p), e.message());
+	}
+		
+	return nullptr;
+}
+
+void check() {
+	fs::path path = fs::current_path() / "war3" / "24";
+
+	jass::jass_state state;
+
+	file_input common(path / "common.j");
+	file_input blizzard(path / "blizzard.j");
+	file_input war3map(path / "war3map.j");
+
+	
+	check_script(common, state);
+	check_script(blizzard, state);
+
+	auto war3map_ast = check_script(war3map, state);
+
+
+}
 int main(int argn, char** argv) {
 
 	std::locale::global(std::locale("zh_CN.UTF-8"));
@@ -181,7 +225,9 @@ int main(int argn, char** argv) {
 	
 	init_config();
 
-	tests(fs::path(argv[1]));
+	check();
+
+	//tests(fs::path(argv[1]));
 
 	return 0;
 }

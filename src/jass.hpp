@@ -339,7 +339,7 @@ namespace jass {
 
 		bool is_function_block = false;
 		bool is_local_block = false;
-		bool is_loop_block = false;
+
 		bool is_action_set = false;
 		bool is_action_call = false;
 
@@ -1021,6 +1021,10 @@ namespace jass {
 						throw jass_parse_error(n->as_memory_input(), "ERROR_WASTE_INDEX", name);
 					}
 					n->exp_value_type = as->type;
+
+					if (s.is_action_set) { //参数set
+						s.is_action_set = false;
+					}
 				} else if (auto ls = fs->locals.find(name); ls) {
 					if (has_index && !ls->is_array) { //局部变量不需要索引
 						throw jass_parse_error(n->as_memory_input(), "ERROR_WASTE_INDEX", name);
@@ -1301,7 +1305,7 @@ namespace jass {
 				throw jass_parse_error(exp->as_memory_input(), "ERROR_CONDITION_TYPE");
 			}
 
-			if (!s.is_loop_block) {
+			if (s.loop_line_stack.empty()) {
 				throw jass_parse_error(n->as_sub_input(0), "ERROR_EXITWHEN");
 			}
 		}
@@ -1605,7 +1609,6 @@ namespace jass {
 	struct check_action<key_loop> {
 		template< typename ActionInput >
 		static void apply(const ActionInput& in, jass_state& s) {
-			s.is_loop_block = true;
 			s.loop_line_stack.push(in.position().line);
 		}
 	};
@@ -1614,7 +1617,6 @@ namespace jass {
 	struct check_action<endloop> {
 		template< typename ActionInput >
 		static void apply(const ActionInput& in, jass_state& s) {
-			s.is_loop_block = false;
 
 			if (in.string_view().size() == 0) {
 				throw jass_parse_error(in, "ERROR_ENDLOOP", std::to_string(s.loop_line_stack.top()));
