@@ -45,7 +45,7 @@ void output_error(const position& p, size_t width, std::string_view line, std::s
 		path = std::regex_replace(src, std::regex("\\.j"), ".warn");
 	}
 
-	std::cout << path << std::endl << std::endl;
+	std::cout << path << "  error " << std::endl;
 
 	if (fs::exists(path)) {
 		std::ifstream file(path, std::ios::binary);
@@ -104,11 +104,10 @@ bool tests(const fs::path& tests_path) {
 			std::string str;
 
 			jass::jass_state state;
-			
-			std::cout << path << std::endl;
-
+	
 			const auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
-		
+			std::cout << path <<  "  pass" << std::endl;
+
 		} catch (const jass::jass_parse_error& e) {
 			const auto p = e.positions().front();
 

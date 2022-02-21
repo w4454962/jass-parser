@@ -501,7 +501,7 @@ namespace jass {
 			ts->root = parent->root;
 
 			//继承置空的能力 
-			if (auto it = parent->child_map.find("null"); it->second) {
+			if (auto it = parent->child_map.find("null"); it != parent->child_map.end() && it->second) {
 				ts->child_map.emplace("null", true);
 			}
 
@@ -1355,7 +1355,7 @@ namespace jass {
 			}
 
 			//所有分支都有返回标记 && 包含else分支
-			if (count == size && last->is_type<else_statement>()) {
+			if (count == size && last && last->is_type<else_statement>()) {
 				n->has_return = true;
 			}
 		}
