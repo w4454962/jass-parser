@@ -8,11 +8,15 @@ namespace jass {
 
 	using namespace tao::pegtl;
 
-	struct line_char : sor<one<'\r', '\n'>, istring<'\r', '\n'>> {};
+	struct line_char : sor<one<'\r', '\n'>> {};
 
 	struct comment : if_must<two<'/'>, star<seq<not_at<line_char>, bytes<1>>>> {};
 
-	struct whilespace : sor<one<' ', '\t'>, istring<0xef, 0xbb, 0xbf>> {};
+	//struct comment : seq<two<'/'>, until<line_char>> {};
+
+	struct utf8_head :opt<istring<0xef, 0xbb, 0xbf>>{};
+
+	struct whilespace : sor<one<' ', '\t'>> {};
 
 	struct space : star<sor<comment, whilespace>> {};
 
@@ -20,7 +24,6 @@ namespace jass {
 		static constexpr const char* error_message = "MISS_NL";
 	};
 
-	struct igone : star<not_at<line_char>> {};
 
 	template< typename Key >
 	struct key : seq<space, Key, not_at<identifier_other > > {};
@@ -145,13 +148,13 @@ namespace jass {
 
 	struct type_name: name {};
 	struct type_parent_name : name {};
-	struct type_extends : if_must<key_type, space, type_name, sor<key_extends, ERR("ERROR_EXTENDS_TYPE")>, space, sor<type_parent_name, ERR("ERROR_EXTENDS_TYPE")>> {};
+	struct type_extends : if_must<key_type, space, type_name, sor<key_extends, ERR("ERROR_EXTENDS_TYPE")>, space, sor<type_parent_name, ERR("ERROR_EXTENDS_TYPE")>, newline> {};
 
 	struct global_name : name {};
 	struct global_type : name {};
-	struct global : seq <space, not_at<key_globals, key_function, key_native>, opt<key_constant>, space, global_type, opt<key_array>, space, global_name, opt<seq<assign, exp>>, newline> {};
+	struct global : seq <space, /*not_at<key_globals, key_function, key_native>, */ opt<key_constant>, space, global_type, opt<key_array>, space, global_name, opt<seq<assign, exp>>, newline> {};
 	struct endglobals: opt<key_endglobals>{};
-	struct globals : if_must<key_globals, must<newline, star<sor<global, newline>>, endglobals>> {};
+	struct globals : if_must<key_globals, must<newline>, star<sor<global, newline>>, endglobals> {};
 
 	struct local_name:name {};
 	struct local_type:name {};
@@ -163,7 +166,7 @@ namespace jass {
 
 	struct action_set_var : seq< exp_var, assign, exp>{};
 
-	struct action_call :seq<opt<key_debug>, key_call, sor<exp_call, seq<action_set_var, ERR("ERROR_CALL_AS_SET")>>> {};
+	struct action_call :seq<opt<key_debug>, key_call, sor<exp_call, seq<action_set_var, ERR("ERROR_CALL_AS_SET")>>, newline> {};
 	struct action_set :seq<key_set, action_set_var, must<newline>> {};
 	struct action_return : seq<key_return, opt<exp>, must<newline>> {};
 	struct action_exitwhen : seq<key_exitwhen, exp, must<newline>> {};
@@ -206,11 +209,11 @@ namespace jass {
 
 	struct ext_action : seq<action, ERR("ERROR_ACTION_IN_CHUNK")>{};
 
-	struct chunk : sor<type_extends, globals, native_statement, function, newline, ext_action> {};
+	struct chunk : sor<comment, newline, type_extends, globals, native_statement, function, ext_action> {};
 
 	struct jass : star<chunk> {};
 
-	struct grammar : seq<jass, eof> {};
+	struct grammar : seq<utf8_head, jass, eof> {};
 
 
 
@@ -1638,6 +1641,14 @@ namespace jass {
 		}
 	};
 
+
+	template<>
+	struct check_action<comment> {
+		template< typename ActionInput >
+		static void apply(const ActionInput& in, jass_state& s) {
+		//	std::cout << in.position().line << ":" << in.string_view() << std::endl;
+		}
+	};
 
 	
 
