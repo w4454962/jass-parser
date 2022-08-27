@@ -175,7 +175,7 @@ namespace tao::pegtl::parse_tree2
        template<typename type, size_t N>
        struct Stack
        {
-           std::array<type,N> pool;
+           type pool [N] ;
            size_t pos;
 
            Stack() {
