@@ -212,8 +212,6 @@ namespace jass {
 	struct grammar : seq<utf8_head, jass, eof> {};
 
 
-
-
 	struct jass_node :
 		parse_tree2::basic_node<jass_node>
 	{
@@ -918,7 +916,9 @@ namespace jass {
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
 			if (n->children.size() == 1) { //没有操作符的匹配
-				n = std::move(n->children.front());
+				std::unique_ptr<jass_node> p = std::move(n);
+				n = std::move(p->children.front());
+				p->state->collect(p);
 				return;
 			}
 
@@ -939,7 +939,9 @@ namespace jass {
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
 			if (n->children.size() == 1) { //没有操作符的匹配
-				n = std::move(n->children.front());
+				std::unique_ptr<jass_node> p = std::move(n);
+				n = std::move(p->children.front());
+				p->state->collect(p);
 				return;
 			}
 
@@ -968,7 +970,9 @@ namespace jass {
 		static void transform(const ParseInput& in, std::unique_ptr<jass_node>& n, jass_state& s)
 		{
 			if (n->children.size() == 1) { //没有操作符的匹配
-				n = std::move(n->children.front());
+				std::unique_ptr<jass_node> p = std::move(n);
+				n = std::move(p->children.front());
+				p->state->collect(p);
 				return;
 			}
 		}
