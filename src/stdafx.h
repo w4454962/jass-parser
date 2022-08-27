@@ -23,7 +23,7 @@
 
 #include <tao/pegtl.hpp>
 #include <tao/pegtl/parse_error.hpp>
-#include <tao/pegtl/contrib/parse_tree.hpp>
+#include "parse_tree2.hpp"
 #include <tao/pegtl/contrib/parse_tree_to_dot.hpp>
 
 
@@ -35,7 +35,7 @@
 
 #pragma warning(disable:4309 4455)
 
-std::string_view convert_message(std::string_view msg);
+std::string_view convert_message(std::string_view msgt);
 
 
 

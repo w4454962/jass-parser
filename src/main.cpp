@@ -2,6 +2,8 @@
 
 
 #include "jass.hpp"
+#include <tao/pegtl/contrib/coverage.hpp>
+#include <tao/pegtl/contrib/print_coverage.hpp>
 
 namespace fs = std::filesystem;
 
@@ -172,16 +174,21 @@ void init_config() {
 }
 
 
+coverage_result check_action_result;
 
 std::unique_ptr<jass::jass_node> check_script( file_input<>& in, jass::jass_state& state)
 {
 		
 	try {
 
-		state.has_function = false;
+		state.temp.has_function = false;
 
-		auto root = parse_tree::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
+		auto root = parse_tree2::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
 		std::cout << in.source() <<  "  pass" << std::endl;
+
+
+		//in.restart();
+		//const bool success = coverage<jass::grammar>(in, check_action_result);
 
 		return std::move(root);
 
@@ -214,12 +221,28 @@ void check() {
 	
 	check_script(common, state);
 	check_script(blizzard, state);
-
-
-
+	
+	
+	
 	auto war3map_ast = check_script(war3map, state);
 
 	std::cout << "耗时 : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " 秒" << std::endl;;
+
+
+	//std::ofstream file("out.txt", std::ios::binary);
+
+	//file << check_action_result;
+	//std::cout << check_action_result << std::endl;
+	//file.close();
+	//
+	//std::ofstream file2("out2.txt", std::ios::binary);
+	//file2 << "name\tstart\tsuccess\tfailure\traise\n";
+	//
+	//for (auto&& [k, v] : check_action_result) {
+	//	file2 << k << "\t" << v.start << "\t" << v.success << "\t" << v.failure << "\t" << v.raise << "\n";
+	//}
+	//file2.close();
+
 
 }
 int main(int argn, char** argv) {

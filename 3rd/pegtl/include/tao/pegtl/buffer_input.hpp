@@ -57,7 +57,7 @@ namespace tao::pegtl
            m_end( m_buffer.get() ),
            m_source( std::forward< T >( in_source ) )
       {
-         static_assert( Chunk, "zero chunk size not implemented" );
+         static_assert( Chunk != 0, "zero chunk size not implemented" );
          assert( m_maximum > maximum );  // Catches overflow; change to >= when zero chunk size is implemented.
       }
 
@@ -160,9 +160,7 @@ namespace tao::pegtl
             std::terminate();
 #endif
          }
-         if( const auto r = m_reader( m_end, ( std::min )( buffer_free_after_end(), ( std::max )( amount - buffer_occupied(), Chunk ) ) ) ) {
-            m_end += r;
-         }
+         m_end += m_reader( m_end, ( std::min )( buffer_free_after_end(), ( std::max )( amount - buffer_occupied(), Chunk ) ) );
       }
 
       template< rewind_mode M >
