@@ -16,6 +16,9 @@
     <Filter Include="src\utils">
       <UniqueIdentifier>{34772672-a194-4d53-b075-ff8da90b8e4b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\patch">
+      <UniqueIdentifier>{0ce956e9-6437-41ad-b75d-c2d73c62283a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp">
@@ -41,8 +44,11 @@
     <ClInclude Include="src\stdafx.h">
       <Filter>src</Filter>
     </ClInclude>
-    <ClInclude Include="src\parse_tree2.hpp">
-      <Filter>src</Filter>
+    <ClInclude Include="src\patch\demangle2.hpp">
+      <Filter>src\patch</Filter>
+    </ClInclude>
+    <ClInclude Include="src\patch\parse_tree2.hpp">
+      <Filter>src\patch</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

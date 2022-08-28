@@ -25,7 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\jass.hpp" />
-    <ClInclude Include="src\parse_tree2.hpp" />
+    <ClInclude Include="src\patch\demangle2.hpp" />
+    <ClInclude Include="src\patch\parse_tree2.hpp" />
     <ClInclude Include="src\stdafx.h" />
     <ClInclude Include="src\utils\dynarray.h" />
     <ClInclude Include="src\utils\unicode.h" />
