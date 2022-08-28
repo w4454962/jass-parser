@@ -25,8 +25,7 @@ namespace jass {
 	};
 
 
-#define KEYWORD(s)  \
-	struct key_##s : seq<space, TAO_PEGTL_KEYWORD(#s)> {};
+#define KEYWORD(s)  struct key_##s : seq<space, TAO_PEGTL_KEYWORD(#s)> {};
 
 	//生成关键字
 #define KEYWORD_ALL	(or)(and)(not)(if)(then)(elseif)(else)(endif)(loop)(endloop)(function)(endfunction) \
@@ -234,7 +233,7 @@ namespace jass {
 		}
 
 	};
-
+	 
 
 	using data_type = std::string_view;
 

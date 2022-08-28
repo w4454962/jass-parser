@@ -173,8 +173,11 @@ void init_config() {
 	//}
 }
 
+//#define DEBUG_COUNT
 
-coverage_result check_action_result;
+#ifdef DEBUG_COUNT
+	coverage_result check_action_result;
+#endif
 
 std::unique_ptr<jass::jass_node> check_script( file_input<>& in, jass::jass_state& state)
 {
@@ -186,9 +189,11 @@ std::unique_ptr<jass::jass_node> check_script( file_input<>& in, jass::jass_stat
 		auto root = parse_tree2::parse<jass::grammar, jass::jass_node, jass::selector, jass::check_action>(in, state);
 		std::cout << in.source() <<  "  pass" << std::endl;
 
-
-		//in.restart();
-		//const bool success = coverage<jass::grammar>(in, check_action_result);
+#ifdef DEBUG_COUNT
+		in.restart();
+		const bool success = coverage<jass::grammar>(in, check_action_result);
+#endif
+		
 
 		return std::move(root);
 
@@ -225,7 +230,6 @@ void check() {
 	check_script(blizzard, state);
 	
 	 
-	 
 	auto war3map_ast = check_script(war3map, state);
 
 	
@@ -238,20 +242,21 @@ void check() {
 
 	//printf("count %i     %i\n", jass::create_count, jass::delete_count);
 
-	//std::ofstream file("out.txt", std::ios::binary);
+#ifdef DEBUG_COUNT
+	std::ofstream file("out.txt", std::ios::binary);
 
-	//file << check_action_result;
-	//std::cout << check_action_result << std::endl;
-	//file.close();
-	//
-	//std::ofstream file2("out2.txt", std::ios::binary);
-	//file2 << "name\tstart\tsuccess\tfailure\traise\n";
-	//
-	//for (auto&& [k, v] : check_action_result) {
-	//	file2 << k << "\t" << v.start << "\t" << v.success << "\t" << v.failure << "\t" << v.raise << "\n";
-	//}
-	//file2.close();
-
+	file << check_action_result;
+	std::cout << check_action_result << std::endl;
+	file.close();
+	
+	std::ofstream file2("out2.txt", std::ios::binary);
+	file2 << "name\tstart\tsuccess\tfailure\traise\n";
+	
+	for (auto&& [k, v] : check_action_result) {
+		file2 << k << "\t" << v.start << "\t" << v.success << "\t" << v.failure << "\t" << v.raise << "\n";
+	}
+	file2.close();
+#endif 
 
 }
 int main(int argn, char** argv) {

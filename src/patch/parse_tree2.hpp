@@ -336,6 +336,7 @@ namespace tao::pegtl::parse_tree2
          static void start( const ParseInput& /*unused*/, state< Node >& state, States&&... /*unused*/ )
          {
             state.emplace_back();
+            
          }
 
          template< typename ParseInput, typename... States >
@@ -346,9 +347,8 @@ namespace tao::pegtl::parse_tree2
             for( auto& c : n->children ) {
                state.back()->children.emplace_back( std::move( c ) );
             }
-            if (n) {
-                state.collect(n);
-            }
+            state.collect(n);
+            
          }
 
          template< typename ParseInput, typename... States >
@@ -388,6 +388,7 @@ namespace tao::pegtl::parse_tree2
                state.back()->emplace_back( std::move( n ), st... );
             }
             Control< Rule >::success( in, st... );
+           
          }
 
          template< typename ParseInput, typename... States >
@@ -468,6 +469,7 @@ namespace tao::pegtl::parse_tree2
       }
    };
 
+ 
    // if a node has only one child, replace the node with its child, otherwise remove content
    struct fold_one
       : apply< fold_one >
