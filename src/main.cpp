@@ -224,15 +224,15 @@ void check() {
 	check_script(common, state);
 	check_script(blizzard, state);
 	
-	
-	
+	 
+	 
 	auto war3map_ast = check_script(war3map, state);
 
 	
 	//for (int i = 0; i < 30000000; i++) {
 	//	auto ptr = std::make_unique<jass::jass_node>();
 	//	//test_map.emplace(std::move(ptr), true);
-	//}
+	//} 
 
 	std::cout << "耗时 : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " 秒" << std::endl;;
 

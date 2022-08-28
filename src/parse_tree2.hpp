@@ -48,7 +48,7 @@ namespace tao::pegtl::parse_tree2
                 pos = -1;
             }
 
-            [[nodiscard]] void emplace_back(type v) {
+            [[nodiscard]] void emplace_back(type& v) {
                 pool[++pos] = std::move(v);
             }
 
@@ -79,12 +79,13 @@ namespace tao::pegtl::parse_tree2
             state()
             {
                 emplace_back();
+
             }
 
             [[nodiscard]] void collect(std::unique_ptr<Node>& n) {
                 if (n) {
                     n->clear(cache);
-                    cache.emplace_back(std::move(n));
+                    cache.emplace_back(n);
                 }
             }
 
@@ -100,7 +101,7 @@ namespace tao::pegtl::parse_tree2
                     n->state = this;
                 }
                
-                stack.emplace_back(std::move(n));
+                stack.emplace_back(n);
             }
 
             [[nodiscard]] std::unique_ptr< Node >& back() noexcept
@@ -160,7 +161,7 @@ namespace tao::pegtl::parse_tree2
               for (auto& v : children) {
                   if (v) {
                       v->clear(s);
-                      s.emplace_back(std::move(v));
+                      s.emplace_back(v);
                   }
               }
               children.clear();
@@ -511,7 +512,7 @@ namespace tao::pegtl::parse_tree2
       if( !tao::pegtl::parse< Rule, Action, internal::make_control< Node, Selector, Control >::template type >( in, st..., state ) ) {
          return nullptr;
       } 
-      assert( state.stack.size() == 1 );
+      //assert( state.stack.size() == 1 );
       //printf("num %i\n", state.num);
 
       return std::move( state.back() );

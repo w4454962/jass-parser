@@ -10,11 +10,11 @@ namespace jass {
 
 	struct line_char : sor<one<'\r', '\n'>> {};
 
-	struct comment : if_must<two<'/'>, star<seq<not_at<line_char>, bytes<1>>>> {};
+	//struct comment : if_must<two<'/'>, until<line_char, bytes<1>>> {};
 
-	//struct comment : seq<two<'/'>, until<line_char>> {};
+	struct comment : seq<two<'/'>, until<line_char>> {};
 
-	struct utf8_head :opt<istring<0xef, 0xbb, 0xbf>>{};
+	struct utf8_bom :opt<istring<0xef, 0xbb, 0xbf>>{};
 
 	struct whilespace : sor<one<' ', '\t'>> {};
 
@@ -209,7 +209,7 @@ namespace jass {
 
 	struct jass : star<chunk> {};
 
-	struct grammar : seq<utf8_head, jass, eof> {};
+	struct grammar : seq<utf8_bom, jass, eof> {};
 
 
 	struct jass_node :
