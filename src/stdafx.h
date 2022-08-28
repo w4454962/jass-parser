@@ -10,6 +10,7 @@
 #include <vector>
 #include <utils/unicode.h>
 #include <unordered_map>
+#include <map>
 #include <regex>
 #include <memory>
 #include <string>

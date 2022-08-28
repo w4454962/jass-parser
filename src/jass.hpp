@@ -333,8 +333,8 @@ namespace jass {
 		bool has_function = false;
 		bool has_return_any = false;
 
-		std::stack<size_t> if_line_stack;
-		std::stack<size_t> loop_line_stack;
+		std::vector<size_t> if_line_stack;
+		std::vector<size_t> loop_line_stack;
 
 		size_t key_globals_line = 0;
 	};
@@ -1625,7 +1625,7 @@ namespace jass {
 	struct check_action<key_if> {
 		template< typename ActionInput >
 		static void apply(const ActionInput& in, jass_state& s) {
-			s.temp.if_line_stack.push(in.position().line);
+			s.temp.if_line_stack.emplace_back(in.position().line);
 		}
 	};
 
@@ -1635,9 +1635,9 @@ namespace jass {
 		static void apply(const ActionInput& in, jass_state& s) {
 
 			if (in.string_view().size() == 0) {
-				throw jass_parse_error(in, "ERROR_ENDIF", std::to_string(s.temp.if_line_stack.top()));
+				throw jass_parse_error(in, "ERROR_ENDIF", std::to_string(s.temp.if_line_stack.back()));
 			}
-			s.temp.if_line_stack.pop();
+			s.temp.if_line_stack.pop_back();
 		}
 	};
 
@@ -1645,7 +1645,7 @@ namespace jass {
 	struct check_action<key_loop> {
 		template< typename ActionInput >
 		static void apply(const ActionInput& in, jass_state& s) {
-			s.temp.loop_line_stack.push(in.position().line);
+			s.temp.loop_line_stack.emplace_back(in.position().line);
 		}
 	};
 
@@ -1655,9 +1655,9 @@ namespace jass {
 		static void apply(const ActionInput& in, jass_state& s) {
 
 			if (in.string_view().size() == 0) {
-				throw jass_parse_error(in, "ERROR_ENDLOOP", std::to_string(s.temp.loop_line_stack.top()));
+				throw jass_parse_error(in, "ERROR_ENDLOOP", std::to_string(s.temp.loop_line_stack.back()));
 			}
-			s.temp.loop_line_stack.pop();
+			s.temp.loop_line_stack.pop_back();
 		}
 	};
 

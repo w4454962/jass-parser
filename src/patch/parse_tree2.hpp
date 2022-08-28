@@ -52,6 +52,7 @@ namespace tao::pegtl::parse_tree2
                 pool[++pos] = std::move(v);
             }
 
+
             [[nodiscard]] bool empty() {
                 return pos == -1;
             }
