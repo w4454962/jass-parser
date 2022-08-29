@@ -16,6 +16,7 @@
 #include <string>
 #include <sstream>
 #include <stack>
+#include <array>
 #define __cpp_lib_format
 
 #include <format>

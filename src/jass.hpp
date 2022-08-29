@@ -8,7 +8,7 @@ namespace jass {
 
 	using namespace tao::pegtl;
 
-	struct line_char : sor<one<'\r', '\n'>> {};
+	struct line_char : one<'\r', '\n'> {};
 
 	//struct comment : if_must<two<'/'>, until<line_char, bytes<1>>> {};
 
@@ -16,7 +16,7 @@ namespace jass {
 
 	struct utf8_bom :opt<istring<0xef, 0xbb, 0xbf>>{};
 
-	struct whilespace : sor<one<' ', '\t'>> {};
+	struct whilespace : one<' ', '\t'> {};
 
 	struct space : seq<star<whilespace>, opt<comment>> {};
 
@@ -72,11 +72,11 @@ namespace jass {
 	
 	struct integer256 : seq<space, char_256> {};
 	struct integer16 : seq<sor<istring<'0', 'x'>, one<'$'>>, sor<plus<xdigit>, ERR("ERROR_INT16")>> {};
-	struct integer8 : seq<istring<'0'>, plus<odigit>> {};
+	struct integer8 : seq<one<'0'>, plus<odigit>> {};
 	struct integer : seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, plus<digit>>> {};
 
 
-	struct name : seq<alpha, opt<plus<sor<alnum, one<'_'>>>>>{};
+	struct name : seq<alpha, star<sor<alnum, one<'_'>>>>{};
 
 	struct code_name : name {};
 
@@ -113,9 +113,9 @@ namespace jass {
 
 	struct exp_neg : seq<space, sub, exp_neg_exp> {};
 	struct exp_var_name : name {};
-	struct exp_var : seq<space, exp_var_name, opt<seq<bl, exp, br>>> {};
+	struct exp_var : seq<space, exp_var_name, opt<bl, exp, br>> {};
 	struct exp_value : sor<value, exp_var> {};
-	struct exp_call_args : seq<exp, star<seq<comma, exp>>> {};
+	struct exp_call_args : seq<exp, star<comma, exp>> {};
 	struct exp_call_name: name {};
 	struct exp_call : seq<space, exp_call_name, pl, opt<exp_call_args>, pr> {};
 	struct exp_code : seq<key_function, space, name, pl, opt<exp_call_args>, pr> {};
@@ -133,12 +133,12 @@ namespace jass {
 	struct exp_or : key_or {};
 	struct exp_and : key_and {};
 
-	struct exp_check_mul_div : seq<exp_unit, star<seq<space, exp_mul_div, sor<exp_unit, ERR("ERROR_MISS_EXP")>>>> {};
-	struct exp_check_add_sub : seq<exp_check_mul_div, star<seq<space, exp_add_sub, sor<exp_check_mul_div, ERR("ERROR_MISS_EXP")>>>> {};
-	struct exp_check_not : seq<space, sor<seq<exp_not, exp_check_add_sub>, seq<exp_not, ERR("ERROR_MISS_EXP")>, exp_check_add_sub>> {};
-	struct exp_check_compare : seq<exp_check_not, star<seq<space, exp_compare_operator, sor<exp_check_not, ERR("ERROR_MISS_EXP")>>>> {};
-	struct exp_check_or : seq<exp_check_compare, star<seq<space, exp_or, sor<exp_check_compare, ERR("ERROR_MISS_EXP")>>>> {};
-	struct exp_check_and : seq<exp_check_or, star<seq<space, exp_and, sor<exp_check_or, ERR("ERROR_MISS_EXP")>>>> {};
+	struct exp_check_mul_div : seq<exp_unit, star<space, exp_mul_div, sor<exp_unit, ERR("ERROR_MISS_EXP")>>> {};
+	struct exp_check_add_sub : seq<exp_check_mul_div, star<space, exp_add_sub, sor<exp_check_mul_div, ERR("ERROR_MISS_EXP")>>> {};
+	struct exp_check_not : seq<space, sor<seq<exp_not, sor<exp_check_add_sub, ERR("ERROR_MISS_EXP")>>, exp_check_add_sub>> {};
+	struct exp_check_compare : seq<exp_check_not, star<space, exp_compare_operator, sor<exp_check_not, ERR("ERROR_MISS_EXP")>>> {};
+	struct exp_check_or : seq<exp_check_compare, star<space, exp_or, sor<exp_check_compare, ERR("ERROR_MISS_EXP")>>> {};
+	struct exp_check_and : seq<exp_check_or, star<space, exp_and, sor<exp_check_or, ERR("ERROR_MISS_EXP")>>> {};
 	struct exp : exp_check_and {};
 
 	struct type_name: name {};
@@ -147,17 +147,17 @@ namespace jass {
 
 	struct global_name : name {};
 	struct global_type : name {};
-	struct global : seq <space, /*not_at<key_globals, key_function, key_native>, */ opt<key_constant>, space, global_type, opt<key_array>, space, global_name, opt<seq<assign, exp>>, newline> {};
+	struct global : seq <opt<key_constant>, space, global_type, opt<key_array>, space, global_name, opt<assign, exp>, newline> {};
 	struct endglobals: opt<key_endglobals>{};
 	struct globals : if_must<key_globals, must<newline>, star<sor<global, newline>>, endglobals> {};
 
 	struct local_name:name {};
 	struct local_type:name {};
-	struct local : if_must<key_local, space, local_type ,opt<key_array>, space, local_name, opt<seq<assign, exp>>, must<newline>> {};
+	struct local : if_must<key_local, space, local_type ,opt<key_array>, space, local_name, opt<assign, exp>, must<newline>> {};
 	struct local_list : star<sor<seq<key_constant, ERR("ERROR_CONSTANT_LOCAL")>, local, newline>> {};
 
 	struct action;
-	struct action_list : star<sor<action, newline, seq<key_local, ERR("ERROR_LOCAL_IN_FUNCTION")>>> {};
+	struct action_list : star<sor<newline, action, seq<key_local, ERR("ERROR_LOCAL_IN_FUNCTION")>>> {};
 
 	struct action_set_var : seq< exp_var, assign, exp>{};
 
@@ -172,11 +172,11 @@ namespace jass {
 	struct elseif_statement : if_must<key_elseif, then_statement, must<newline>, action_list> {};
 	struct else_statement : if_must<key_else, must<newline>, action_list> {};
 
-	struct endif: opt<seq<key_endif, must<newline>>>{};
+	struct endif: opt<key_endif, must<newline>>{};
 
 	struct action_if : seq<if_statement, star<elseif_statement>, opt<else_statement>, endif> {};
 
-	struct endloop: opt<seq<key_endloop, must<newline>>>{};
+	struct endloop: opt<key_endloop, must<newline>>{};
 	struct action_loop : if_must<key_loop, must<action_list, endloop>> {};
 
 	struct action : sor<action_call, action_set, action_return, action_exitwhen, action_if, action_loop> {};
@@ -185,7 +185,7 @@ namespace jass {
 	struct arg_type : name {};
 	struct arg_name: name {};
 	struct arg_statement : seq<space, arg_type, space, arg_name> {};
-	struct args_statement : seq < sor < nothing,  seq<arg_statement, star<seq<comma, arg_statement>> >> > {};
+	struct args_statement : sor<nothing, seq<arg_statement, star<comma, arg_statement>>> {};
 	struct check_returns : sor<key_returns, if_must<key_return, ERR("ERROR_RETURN_AS_RETURNS")>> {};
 
 	struct native_name: name{};
@@ -194,7 +194,7 @@ namespace jass {
 
 	
 	struct function_name :name {};
-	struct function_statement : seq<opt<key_constant>, key_function, must<space, function_name, key_takes, space, args_statement, check_returns, space, returns_type, newline>>{};
+	struct function_statement : seq<opt<key_constant>, key_function, must<space, function_name, key_takes, args_statement, check_returns, space, returns_type, newline>>{};
 	
 	struct endfunction : opt<key_endfunction> {};
 
@@ -204,16 +204,77 @@ namespace jass {
 
 	struct ext_action : seq<action, ERR("ERROR_ACTION_IN_CHUNK")>{};
 
-	struct chunk : sor<comment, newline, type_extends, globals, native_statement, function, ext_action> {};
+	struct chunk : sor<type_extends, globals, native_statement, function, ext_action, newline> {};
 
 	struct jass : star<chunk> {};
 
 	struct grammar : seq<utf8_bom, jass, eof> {};
 
 
+
+
+	//namespace internal
+	//{
+	//	// a non-thread-safe allocation cache, assuming that the size (sz) is always the same!
+	//	template< std::size_t N >
+	//	struct cache
+	//	{
+	//		std::size_t pos = 0;
+	//		//std::array< void*, N > data;
+	//		void* data[N];
+	//
+	//		cache() = default;
+	//
+	//		cache(const cache&) = delete;
+	//		cache(cache&&) = delete;
+	//
+	//		~cache()
+	//		{
+	//			while (pos != 0) {
+	//				::operator delete(data[--pos]);
+	//			}
+	//		}
+	//
+	//		cache& operator=(const cache&) = delete;
+	//		cache& operator=(cache&&) = delete;
+	//
+	//		void* get(std::size_t sz)
+	//		{
+	//			if (pos != 0) {
+	//				return data[--pos];
+	//			}
+	//			return ::operator new(sz);
+	//		}
+	//
+	//		void put(void* p)
+	//		{
+	//			if (pos < N) {
+	//				data[pos++] = p;
+	//			}
+	//			else {
+	//				::operator delete(p);
+	//			}
+	//		}
+	//	};
+	//
+	//	static cache< 0x1000 > the_cache;
+	//
+	//}  // namespace internal
+
 	struct jass_node :
 		parse_tree2::basic_node<jass_node>
 	{
+		//void* operator new(std::size_t sz)
+		//{
+		//	assert(sz == sizeof(node));
+		//	return internal::the_cache.get(sz);
+		//}
+		//
+		//void operator delete(void* p)
+		//{
+		//	internal::the_cache.put(p);
+		//}
+
 
 		std::string_view exp_value_type; //只有在exp节点才有值
 
@@ -1495,39 +1556,6 @@ namespace jass {
 	>;
 
 	
-	struct coverage_info
-	{
-		std::size_t start = 0;
-		std::size_t success = 0;
-		std::size_t failure = 0;
-		std::size_t unwind = 0;
-		std::size_t raise = 0;
-	};
-
-	struct coverage_entry
-		: coverage_info
-	{
-		std::unordered_map< std::string_view, coverage_info > branches;
-	};
-
-	using coverage_result = std::unordered_map< std::string_view, coverage_entry >;
-
-	template<typename Rule>
-	struct coverage_insert
-	{
-		static void visit(std::unordered_map< std::string_view, coverage_entry >& map)
-		{
-			visit_branches(map.try_emplace(demangle< Rule >()).first->second.branches, typename Rule::subs_t());
-		}
-
-		template< typename... Ts >
-		static void visit_branches(std::unordered_map< std::string_view, coverage_info >& branches, type_list< Ts... > /*unused*/)
-		{
-			(branches.try_emplace(demangle< Ts >()), ...);
-		}
-	};
-
-
 	template< typename Rule >
 	struct check_action 
 		:tao::pegtl::nothing<Rule>
