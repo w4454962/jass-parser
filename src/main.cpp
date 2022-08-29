@@ -232,7 +232,7 @@ void check() {
 	auto war3map_ast = check_script(war3map, state);
 
 
-	std::cout << "耗时 : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " 秒" << std::endl;;
+	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
 #ifdef DEBUG_COUNT
 	std::ofstream file("out.txt", std::ios::binary);
