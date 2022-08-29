@@ -1,2 +1,2 @@
-war3/* linguist-vendored
-tests/* linguist-vendored
+* linguist-vendored
+*.j linguist-vendored=false
