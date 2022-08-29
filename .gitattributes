@@ -1,1 +1,2 @@
-*.j linguist-vendored
+war3/*.* linguist-vendored
+tests/*.* linguist-vendored
