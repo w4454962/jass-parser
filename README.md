@@ -3,6 +3,8 @@
 
 jass parser by cpp
 
+Parsing rules using pegtl templates https://github.com/taocpp/PEGTL
+
 Parsing 300000 lines of 27mb jass syntax tree takes 4 seconds
 
 
