@@ -212,7 +212,6 @@ std::unique_ptr<jass::jass_node> check_script( file_input<>& in, jass::jass_stat
 	return nullptr;
 }
 
-//std::unordered_map< std::unique_ptr<jass::jass_node>, bool> test_map;
 
 void check() {
 	fs::path path = fs::current_path() / "war3" / "24";
@@ -232,15 +231,8 @@ void check() {
 	 
 	auto war3map_ast = check_script(war3map, state);
 
-	
-	//for (int i = 0; i < 30000000; i++) {
-	//	auto ptr = std::make_unique<jass::jass_node>();
-	//	//test_map.emplace(std::move(ptr), true);
-	//} 
 
 	std::cout << "耗时 : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " 秒" << std::endl;;
-
-	//printf("count %i     %i\n", jass::create_count, jass::delete_count);
 
 #ifdef DEBUG_COUNT
 	std::ofstream file("out.txt", std::ios::binary);
