@@ -468,18 +468,22 @@ namespace jass {
 
 	};
 
+	template<typename T>
+	inline bool is_demangle(const std::string_view& t) {
+		return (t.data() == demangle<T>().data() && t.size() == demangle<T>().size()) || (t == demangle<T>());
+	}
 
 	inline std::string_view get_match_exp_type(const std::string_view& t1, const std::string_view& t2) {
-		if (t1 == demangle<integer>()) {
-			if (t2 == demangle<integer>()) {
+		if (is_demangle<integer>(t1)) {
+			if (is_demangle<integer>(t2)) {
 				return demangle<integer>();
 			}
-			else if (t2 == demangle<real>()) {
+			else if (is_demangle<real>(t2)) {
 				return demangle<real>();
 			}
 		}
-		else if (t1 == demangle<real>()) {
-			if (t2 == demangle<integer>() || t2 == demangle<real>()) {
+		else if (is_demangle<real>(t1)) {
+			if (is_demangle<integer>(t2) || is_demangle<real>(t2)) {
 				return demangle<real>();
 			}
 		}
@@ -487,7 +491,7 @@ namespace jass {
 	}
 
 	inline std::string_view get_string_connect(const std::string_view& t1, const std::string_view& t2) {
-		if ((t1 == demangle<string>() || t1 == demangle<null>()) && (t2 == demangle<string>() || t2 == demangle<null>())) {
+		if ((is_demangle<string>(t1) || is_demangle<null>(t1)) && (is_demangle<string>(t2) || is_demangle<null>(t2))) {
 			return demangle<string>();
 		}
 		return "";
@@ -727,7 +731,7 @@ namespace jass {
 					gs->is_array = true;
 					gs->name = check_name(2);
 				
-					if (gs->type == demangle<code>()) { //code类型不能是数组
+					if (is_demangle<code>(gs->type)) { //code类型不能是数组
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_CODE_ARRAY");
 					}
 				} else if (n->sub_is_type<global_name>(1)){ // type name = value
@@ -839,7 +843,7 @@ namespace jass {
 					ls->is_array = true;
 					ls->name = check_name(2);
 
-					if (ls->type == demangle<code>()) { //code类型不能是数组
+					if (is_demangle<code>(ls->type)) { //code类型不能是数组
 						throw jass_parse_error(n->as_sub_input(0), "ERROR_CODE_ARRAY");
 						
 					}
@@ -923,7 +927,7 @@ namespace jass {
 
 			case '%':
 			
-				if (t1 == demangle<integer>() && t2 == demangle<integer>()) {
+				if (is_demangle<integer>(t1) && is_demangle<integer>(t2)) {
 					exp_type = t1;
 				} else {
 					throw jass_parse_error(n->as_memory_input(), "ERROR_MOD");
@@ -932,7 +936,7 @@ namespace jass {
 
 			case '==':
 			case '!=':
-				if (t1 == demangle<null>() || t2 == demangle<null>()) {
+				if (is_demangle<null>(t1) || is_demangle<null>(t2)) {
 					exp_type = demangle<boolean>();
 				} else if (!get_match_exp_type(t1, t2).empty()) {
 					exp_type = demangle<boolean>();
@@ -957,7 +961,7 @@ namespace jass {
 			case 'and':
 			case 'or':
 			
-				if (t1 == demangle<boolean>() && t2 == demangle<boolean>()) {
+				if (is_demangle<boolean>(t1) && is_demangle<boolean>(t2)) {
 					exp_type = demangle<boolean>();
 				} else if (byte == 'and') {
 					throw jass_parse_error(n->as_memory_input(), "ERROR_AND", t1, t2);
@@ -1012,7 +1016,7 @@ namespace jass {
 			auto& exp = n->children[1];
 
 			if (op->is_type<exp_not>()) {
-				if (exp->exp_value_type != demangle<boolean>()) {
+				if ( !is_demangle<boolean>(exp->exp_value_type)) {
 					throw jass_parse_error(exp->as_memory_input(), "ERROR_NOT_TYPE");
 				}
 				n->exp_value_type = exp->exp_value_type;
@@ -1047,7 +1051,7 @@ namespace jass {
 		{
 			auto& exp = n->children[1];
 
-			if ((exp->exp_value_type != demangle<real>()) && (exp->exp_value_type != demangle<integer>())) {
+			if (( ! is_demangle<real>(exp->exp_value_type)) && (! is_demangle<integer>(exp->exp_value_type))) {
 				throw jass_parse_error(exp->as_memory_input(), "ERROR_NEG", exp->exp_value_type);
 			}
 		
@@ -1097,7 +1101,7 @@ namespace jass {
 					}else if (has_index && ls->is_array) {
 						auto& exp = n->children[1];
 
-						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
+						if ( !is_demangle<integer>(exp->exp_value_type)) { //索引类型错误
 							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
 
 						}else if (s.temp.is_local_block)  { //在局部变量申明区使用未初始化的局部数组 
@@ -1127,7 +1131,7 @@ namespace jass {
 					} else if (has_index && gs->is_array) {
 						auto& exp = n->children[1];
 
-						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
+						if (!is_demangle<integer>(exp->exp_value_type)) { //索引类型错误
 							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
 						}
 					}
@@ -1168,7 +1172,7 @@ namespace jass {
 					} else if (has_index && gs->is_array) {
 						auto& exp = n->children[1];
 
-						if (exp->exp_value_type != demangle<integer>()) { //索引类型错误
+						if (!is_demangle<integer>(exp->exp_value_type)) { //索引类型错误
 							throw jass_parse_error(n->as_sub_input(1), "ERROR_INDEX_TYPE", name, exp->exp_value_type);
 						}
 					}
@@ -1315,13 +1319,13 @@ namespace jass {
 			auto fs = s.functions.back();
 
 			if (fs->returns_type != return_type) {
-				if (return_type == demangle<nothing>()) { //函数需要返回类型 但是返回空 
+				if (is_demangle<nothing>(return_type)) { //函数需要返回类型 但是返回空 
 					throw jass_parse_error(n->as_memory_input(), "ERROR_MISS_RETURN", fs->name, fs->returns_type);
 
-				} else if (fs->returns_type == demangle<nothing>()) { //函数不需要返回类型 但是 返回非空
+				} else if (is_demangle<nothing>(fs->returns_type)) { //函数不需要返回类型 但是 返回非空
 					throw jass_parse_error(n->as_memory_input(), "ERROR_WASTE_RETURN", fs->name, return_type);
 
-				} else if (fs->returns_type == demangle<real>() && return_type == demangle<integer>()) {
+				} else if (is_demangle<real>(fs->returns_type) && is_demangle<integer>(return_type)) {
 					//函数需要返回实数 但是却返回整数  结果是0.0
 					throw jass_parse_error(n->as_memory_input(), "ERROR_RETURN_INTEGER_AS_REAL", fs->name, fs->returns_type, return_type);
 
@@ -1363,7 +1367,7 @@ namespace jass {
 		{
 			auto& exp = n->children[1];
 
-			if (exp->exp_value_type != demangle<boolean>()) { // exp类型不是boolean
+			if ( !is_demangle<boolean>(exp->exp_value_type)) { // exp类型不是boolean
 				throw jass_parse_error(exp->as_memory_input(), "ERROR_CONDITION_TYPE");
 			}
 
@@ -1386,7 +1390,7 @@ namespace jass {
 
 				auto& exp = n->children[0];
 
-				if (exp->exp_value_type != demangle<boolean>()) { //exp类型不是boolean
+				if ( !is_demangle<boolean>(exp->exp_value_type)) { //exp类型不是boolean
 					throw jass_parse_error(exp->as_memory_input(), "ERROR_CONDITION_TYPE");
 				}
 				actions_index = 1;
@@ -1462,7 +1466,7 @@ namespace jass {
 				}
 			}
 		
-			if (!has_return && fs->returns_type != demangle<nothing>()) { //没有返回值 且函数返回类型不是nothing
+			if (!has_return &&  !is_demangle<nothing>(fs->returns_type)) { //没有返回值 且函数返回类型不是nothing
 
 				if (s.temp.has_return_any) {
 					throw jass_parse_error(n->as_sub_input(endfunction_index), "ERROR_RETURN_IN_ALL", fs->name, fs->returns_type);
