@@ -2,7 +2,7 @@
 // Distributed under the Boost Software License, Version 1.0.
 // (See accompanying file LICENSE_1_0.txt or copy at https://www.boost.org/LICENSE_1_0.txt)
 
-#define HEAD_LEN 13
+
 
 #ifndef TAO_PEGTL_DEMANGLE_HPP
 #define TAO_PEGTL_DEMANGLE_HPP
@@ -119,7 +119,7 @@ template< typename T >
    // see issues #296, #301 and #308
    constexpr std::string_view sv = __FUNCSIG__;
    constexpr auto begin = sv.find( "demangle<" );
-   constexpr auto tmp = sv.substr( begin + 9 + HEAD_LEN);
+   constexpr auto tmp = sv.substr( begin + 9 + sizeof("struct jass::") - 1);
    constexpr auto end = tmp.rfind( '>' );
    return tmp.substr( 0, end );
 }
