@@ -18,27 +18,17 @@
 #include <stack>
 #include <array>
 #define __cpp_lib_format
-
 #include <format>
 
-
-#include "patch/demangle2.hpp"
-#include <tao/pegtl.hpp>
-#include <tao/pegtl/parse_error.hpp>
-#include "patch/parse_tree2.hpp"
-#include <tao/pegtl/contrib/parse_tree_to_dot.hpp>
-
-
-#include <boost/preprocessor.hpp>
-
-#undef or 
-#undef and
-#undef not
+#include <sol/sol.hpp>
 
 #pragma warning(disable:4309 4455)
 
-std::string_view convert_message(std::string_view msgt);
+namespace fs = std::filesystem;
 
+
+
+std::string_view convert_message(std::string_view msgt);
 
 
 typedef std::uint32_t hash_t;
@@ -58,3 +48,4 @@ constexpr unsigned int operator "" s_hash(char const* p, size_t)
 {
 	return hash_compile_time(p);
 }
+
