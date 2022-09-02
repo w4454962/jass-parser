@@ -231,7 +231,6 @@ void check() {
 	 
 	auto war3map_ast = check_script(war3map, state);
 
-
 	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
 #ifdef DEBUG_COUNT

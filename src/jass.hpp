@@ -16,11 +16,9 @@ namespace jass {
 
 	struct utf8_bom :opt<istring<0xef, 0xbb, 0xbf>>{};
 
-	struct whilespace : one<' ', '\t'> {};
+	struct space : star<one<' ', '\t'>> {};
 
-	struct space : seq<star<whilespace>, opt<comment>> {};
-
-	struct newline : seq<space, line_char> {
+	struct newline : seq<space, opt<comment>, line_char> {
 		static constexpr const char* error_message = "MISS_NL";
 	};
 
@@ -70,10 +68,10 @@ namespace jass {
 			seq<one<'\''>, ERR("ERROR_INT256_COUNT")>
 	> {};
 	
-	struct integer256 : seq<space, char_256> {};
+	struct integer256 : char_256 {};
 	struct integer16 : seq<sor<istring<'0', 'x'>, one<'$'>>, sor<plus<xdigit>, ERR("ERROR_INT16")>> {};
 	struct integer8 : seq<one<'0'>, plus<odigit>> {};
-	struct integer : seq<space, opt<one< '-' >>, space, sor<integer256, integer16, integer8, plus<digit>>> {};
+	struct integer : seq<space, opt<one< '-' >>, space, sor< integer16, integer8, plus<digit>, integer256>> {};
 
 
 	struct name : seq<alpha, star<sor<alnum, one<'_'>>>>{};
@@ -118,9 +116,8 @@ namespace jass {
 	struct exp_call_args : seq<exp, star<comma, exp>> {};
 	struct exp_call_name: name {};
 	struct exp_call : seq<space, exp_call_name, pl, opt<exp_call_args>, pr> {};
-	struct exp_code : seq<key_function, space, name, pl, opt<exp_call_args>, pr> {};
 	struct exp_paren : seq<pl, exp, pr> {};
-	struct exp_unit : sor<exp_paren, exp_code, exp_call, exp_value, exp_neg> {};
+	struct exp_unit : sor<exp_paren, exp_call, exp_value, exp_neg> {};
 	struct exp_neg_exp :exp_unit {};
 
 	struct exp_add_sub : sor<add, sub> {};
@@ -133,7 +130,7 @@ namespace jass {
 	struct exp_or : key_or {};
 	struct exp_and : key_and {};
 
-	struct exp_check_mul_div : seq<exp_unit, star<space, exp_mul_div, sor<exp_unit, ERR("ERROR_MISS_EXP")>>> {};
+	struct exp_check_mul_div : seq<exp_unit, star<space, sor<comment, seq<exp_mul_div, sor<exp_unit, ERR("ERROR_MISS_EXP")>>>>> {};
 	struct exp_check_add_sub : seq<exp_check_mul_div, star<space, exp_add_sub, sor<exp_check_mul_div, ERR("ERROR_MISS_EXP")>>> {};
 	struct exp_check_not : seq<space, sor<seq<exp_not, sor<exp_check_add_sub, ERR("ERROR_MISS_EXP")>>, exp_check_add_sub>> {};
 	struct exp_check_compare : seq<exp_check_not, star<space, exp_compare_operator, sor<exp_check_not, ERR("ERROR_MISS_EXP")>>> {};
@@ -209,7 +206,6 @@ namespace jass {
 	struct jass : star<chunk> {};
 
 	struct grammar : seq<utf8_bom, jass, eof> {};
-
 
 
 
@@ -1628,7 +1624,7 @@ namespace jass {
 		}
 	};
 	
-
+	 
 	template<>
 	struct check_action<key_globals> {
 		template< typename ActionInput >
