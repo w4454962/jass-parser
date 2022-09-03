@@ -14,12 +14,15 @@
 #include <regex>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <sstream>
 #include <stack>
 #include <array>
+#include <set>
 #define __cpp_lib_format
 #include <format>
 
+#define SOL_ALL_SAFETIES_ON 1
 #include <sol/sol.hpp>
 
 #pragma warning(disable:4309 4455)
@@ -49,3 +52,14 @@ constexpr unsigned int operator "" s_hash(char const* p, size_t)
 	return hash_compile_time(p);
 }
 
+template< typename T >
+[[nodiscard]] constexpr std::string_view demangle() noexcept
+{
+	// we can not add static_assert for additional safety,
+	// see issues #296, #301 and #308
+	constexpr std::string_view sv = __FUNCSIG__;
+	constexpr auto begin = sv.find("demangle<");
+	constexpr auto tmp = sv.substr(begin + 9 );
+	constexpr auto end = tmp.rfind('>');
+	return tmp.substr(0, end);
+}

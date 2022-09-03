@@ -38,5 +38,17 @@
     <ClInclude Include="src\stdafx.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="src\relabel.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\peg.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\jass_peg_rule.h">
+      <Filter>src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\jass_parser.hpp">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
