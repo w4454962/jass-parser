@@ -107,8 +107,6 @@ int main(int argn, char** argv) {
 	lua.require_script("peg", peg_script, false, "peg");
 
 
-
-
 	std::string script = "-1+2*3/(4+20)";
 	ParseResult result;
 	jass_parser(lua, script, result);

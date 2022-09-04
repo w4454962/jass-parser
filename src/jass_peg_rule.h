@@ -119,21 +119,21 @@ static const char jass_peg_rule[] = R"(
 --                ({CONSTANT?} Name {ARRAY?} Name (ASSIGN Exp)?)
 --            ->  Global
 --
---Local       <-  (LocalDef LocalExp?)
---            ->  Local
---            /   TYPE Ignore
---            ->  typeInFunction
---LocalDef    <-  ((CONSTANT -> constantLocal)? LOCAL Name {ARRAY?} Name)
---            ->  LocalDef
---LocalExp    <-  ASSIGN Exp
---Locals      <-  (Local? Nl)+
---
---
---Type        <-  (TYPE TChild TExtends TParent)
---            ->  Type
---TChild      <-  Name   ^ERROR_VAR_TYPE
---TExtends    <-  EXTENDS^ERROR_EXTENDS_TYPE
---TParent     <-  Name   ^ERROR_EXTENDS_TYPE
+Local       <-  (LocalDef LocalExp?)
+            ->  Local
+            /   TYPE Ignore
+            ->  typeInFunction
+LocalDef    <-  ((CONSTANT -> constantLocal)? LOCAL Name {ARRAY?} Name)
+            ->  LocalDef
+LocalExp    <-  ASSIGN Exp
+Locals      <-  (Local? Nl)+
+
+
+Type        <-  (TYPE TChild TExtends TParent)
+            ->  Type
+TChild      <-  Name   ^ERROR_VAR_TYPE
+TExtends    <-  EXTENDS^ERROR_EXTENDS_TYPE
+TParent     <-  Name   ^ERROR_EXTENDS_TYPE
 
 Exp         <-  ECheckAnd
 ECheckAnd   <-  (ECheckOr   (Sp ESAnd    ECheckOr  ^ERROR_MISS_EXP)*) -> Binary

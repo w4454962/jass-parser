@@ -12,12 +12,44 @@ inline std::string error_format(std::string_view msg, Args... args) {
 
 
 typedef std::shared_ptr<struct Node> NodePtr;
-
+typedef std::shared_ptr<struct VarBaseNode> VarPtr;
+typedef std::shared_ptr<struct ExpNode> ExpPtr;
 
 template<typename N, typename T>
 inline auto CastNode(const T& v) {
 	return std::dynamic_pointer_cast<N>((NodePtr)v);
 }
+using string_t = std::string;
+
+
+template< typename Type >
+struct Container
+{
+	typedef std::shared_ptr<Type> object_ptr;
+
+	std::vector<object_ptr> list;
+	std::unordered_map <string_t, object_ptr> map;
+
+	bool save(const string_t& name, object_ptr obj) {
+		if (map.find(name) != map.end()) {
+			return false;
+		}
+		list.push_back(obj);
+		map.emplace(name, obj);
+		return true;
+	}
+
+	object_ptr find(const string_t& name) {
+		if (map.find(name) == map.end()) {
+			return nullptr;
+		}
+		return map.at(name);
+	}
+
+	object_ptr back() {
+		return list.back();
+	}
+};
 
 enum class ValueType {
 	nothing		= 0,
@@ -32,7 +64,7 @@ enum class ValueType {
 };
 
 
-using string_t = std::string;
+
 
 struct Node {
 	string_t type = "none";
@@ -41,8 +73,22 @@ struct Node {
 		return type;
 	}
 
-
 };
+
+
+
+struct VarBaseNode : Node {
+	string_t vtype;
+	string_t name;
+
+	bool has_set;
+
+	VarBaseNode() {
+		type = "var";
+		has_set = false;
+	}
+};
+
 
 struct ExpNode: Node {
 	string_t vtype = "nothing";
@@ -116,6 +162,44 @@ struct ExpCodeValue : ExpNode {
 	}
 };
 
+
+struct ExpVar :ExpNode {
+	VarPtr var;
+
+	ExpVar(VarPtr& var_)
+		:var(var_)
+	{
+		type = "exp_var";
+		vtype = var->type;
+	}
+};
+
+struct ExpVari : ExpNode {
+	VarPtr var;
+
+	ExpPtr index;
+
+	ExpVari(VarPtr& var_, ExpPtr& index_)
+		:var(var_),
+		index(index_)
+	{
+		type = "exp_vari";
+		vtype = var->type;
+	}
+};
+
+struct ExpNeg : ExpNode {
+	ExpPtr exp;
+
+	ExpNeg(ExpPtr& exp_)
+		: exp(exp_)
+	{
+		type = "exp_neg";
+		vtype = exp_->vtype;;
+	}
+};
+
+
 struct ExpBinary : ExpNode {
 
 	string_t op;
@@ -146,6 +230,7 @@ struct ExpUnary :ExpNode {
 	}
 };
 
+
 struct TypeNode : Node {
 	string_t file;
 	size_t line;
@@ -174,14 +259,46 @@ struct CallNode :Node {
 	}
 };
 
-struct ArgNode : Node {
-	string_t vtype;
-	string_t name;
+
+struct ArgNode : VarBaseNode {
+
 	ArgNode(const string_t& type_, const string_t& name_)
-		:vtype(type_),
-		name(name_)
 	{ 
-		type = "arg";
+		vtype = type_;
+		name = name_;
+		type = "var_arg";
+		has_set = true;
+	}
+};
+
+struct LocalNode : VarBaseNode {
+	string_t file;
+	size_t line;
+	
+	bool is_array;
+
+	std::shared_ptr<ExpNode> exp;
+
+	LocalNode(const string_t& type_, const string_t& name_, bool is_array_, const string_t& file_, size_t line_)
+		: is_array(is_array),
+		file(file_),
+		line(line_)
+	{
+		vtype = type_;
+		name = name_;
+		type = "var_local";
+	}
+};
+
+struct GlobalNode : LocalNode {
+
+	bool is_const;
+
+	GlobalNode(bool constant, const string_t& type_, const string_t& name_, bool is_array_, const string_t& file_, size_t line_)
+		: LocalNode(type_, name, is_array, file_, line_)
+	{
+		type = "var_global";
+		is_const = constant;
 	}
 };
 
@@ -193,42 +310,15 @@ struct FunctionNode : Node {
 	bool is_constant;
 	string_t name;
 	string_t returns;
-	std::vector<std::shared_ptr<ArgNode>> args;
+	Container<ArgNode> args;
+
+	Container<LocalNode> locals;
 
 	FunctionNode() {
 		type = "function";
 	}
 };
 
-
-template< typename Type >
-struct Container
-{
-	typedef std::shared_ptr<Type> object_ptr;
-
-	std::vector<object_ptr> list;
-	std::unordered_map <string_t, object_ptr> map;
-
-	bool save(const string_t& name, object_ptr obj) {
-		if (map.find(name) != map.end()) {
-			return false;
-		}
-		list.push_back(obj);
-		map.emplace(name, obj);
-		return true;
-	}
-
-	object_ptr find(const string_t& name) {
-		if (map.find(name) == map.end()) {
-			return nullptr;
-		}
-		return map.at(name);
-	}
-
-	object_ptr back() {
-		return list.back();
-	}
-};
 
 struct ParseError
 {
@@ -239,10 +329,12 @@ struct ParseError
 };
 
 struct ParseResult {
-	std::unordered_map<size_t, string_t> comments;
-
-	Container<FunctionNode> functions;
+	
 	Container<TypeNode> types;
+	Container<GlobalNode> globals;
+	Container<FunctionNode> functions;
+	
+	std::unordered_map<size_t, string_t> comments;
 
 	std::vector<ParseError> errors;
 
@@ -275,6 +367,8 @@ NodePtr false_value(std::make_shared<ExpBooleanValue>(false));
 
 void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
+	lua_State* L = lua.lua_state();
+
 	sol::function make_peg = lua.require_file("peg", "peg");
 
 	sol::function peg_parser = make_peg(jass_peg_rule);
@@ -288,7 +382,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	auto& comments = result.comments;
 	auto& functions = result.functions;
 	auto& types = result.types;
-
+	auto& globals = result.globals;
 	
 	auto add_error = [&](const string_t& msg) {
 		result.errors.push_back({
@@ -314,7 +408,10 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		}
 	};
 	auto check_new_name_globals = [&](const string_t& name) {
-		
+		auto global = globals.find(name);
+		if (global) {
+			add_error(error_format("ERROR_REDEFINE_GLOBAL", name, global->file, global->line));
+		}
 	};
 
 	auto check_new_name_functions = [&](const string_t& name) {
@@ -354,7 +451,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		check_name(name);
 
 		auto func = functions.find(name);
-		if (!func); {
+		if (!func) {
 			add_error(error_format("FUNCTION_NO_EXISTS", name));
 		}
 		return func;
@@ -365,7 +462,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		if (func->name.empty()) {
 			return;
 		}
-		size_t args_count = func->args.size();
+		size_t args_count = func->args.list.size();
 		size_t params_count = call->params.size();
 
 		if (args_count > 0) {
@@ -373,8 +470,8 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 				if (args_count > params_count) {
 					//参数数量不一致
 					std::string miss;
-					for (int i = params_count; i < args_count; i++) {
-						auto& arg = func->args[i];
+					for (size_t i = params_count; i < args_count; i++) {
+						auto& arg = func->args.list[i];
 						if (!miss.empty())
 							miss += ",";
 						miss += std::format("{} {}", arg->type, arg->name);
@@ -386,7 +483,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 				}
 			} else {
 				for (size_t i = 0; i < args_count; i++) {
-					auto& arg = func->args[i];
+					auto& arg = func->args.list[i];
 					auto& exp = call->params[i];
 					if (arg->vtype != exp->vtype) {
 						if (!is_extends(exp->vtype, arg->vtype)) {
@@ -402,7 +499,98 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	};
 
 	auto get_variable = [&](const string_t& name) {
+		check_name(name);
 
+		auto func = functions.back();
+		if (func) {
+			auto local = func->locals.find(name);
+
+			if (local) {
+				return (VarPtr)local;
+			}
+
+			auto arg = func->args.find(name);
+			if (arg) {
+				return (VarPtr)arg;
+			}
+		}
+		return (VarPtr)globals.find(name);
+	};
+
+
+	auto check_set = [&](VarPtr& var, bool need_array, ExpPtr& index, ExpPtr& exp) {
+		if (!var) return;
+		auto& name = var->name;
+
+		if (need_array) {
+			if (var->type == "var_arg" || !CastNode<LocalNode>(var)->is_array) {
+				add_error(error_format("ERROR_WASTE_INDEX", name));
+			}
+		} else {
+			if (var->type != "var_arg" && CastNode<LocalNode>(var)->is_array) {
+				add_error(error_format("ERROR_NO_INDEX", name));
+			}
+		}
+
+		if (index && !is_extends(index->vtype, "integer")) {
+			add_error(error_format("ERROR_INDEX_TYPE", name, index->vtype));
+		}
+
+		auto func = functions.back();
+		if (var->type == "var_global" && CastNode<GlobalNode>(var)->is_const &&func) {
+			add_error(error_format("ERROR_SET_CONSTANT", name));
+		}
+
+		if (exp && is_extends(exp->vtype, var->vtype)) {
+			add_error(error_format("ERROR_SET_TYPE", name, var->type, exp->vtype));
+		}
+	};
+
+	auto check_get = [&](VarPtr& var, bool need_array) {
+		if (!var) return;
+
+		auto& name = var->name;
+
+		if (need_array) {
+			if (var->type == "var_arg" || !CastNode<LocalNode>(var)->is_array ) {
+				add_error(error_format("ERROR_WASTE_INDEX", name));
+			}
+		} else {
+			if (var->type != "var_arg" && CastNode<LocalNode>(var)->is_array) {
+				add_error(error_format("ERROR_NO_INDEX", name));
+			}
+		}
+	};
+
+	auto check_local_with_args = [&](const string_t& name, const string_t& type, bool is_array) {
+		auto func = functions.back();
+		if (!func) return;
+		auto var = func->args.find(name);
+		if (!var) return; 
+
+		if (is_array) {
+			add_error(error_format("ERROR_REDEFINE_ARRAY_WITH_ARG", func->name, func->file, func->line));
+			return;
+		}
+
+		if (type != var->vtype) {
+			add_error(error_format("ERROR_REDEFINE_ARRAY_WITH_ARG", name, type, func->name, var->vtype, func->file, func->line));
+			return;
+		}
+		//warning
+		//add_error(error_format("ERROR_REDEFINE_ARG", name, func->file, func->line));
+	};
+
+
+	auto check_local_with_globals = [&](const string_t& name, const string_t& type, bool is_array) {
+		auto var = globals.find(name);
+		if (!var) return;
+
+		if (is_array && !var->is_array) {
+			add_error(error_format("ERROR_REDEFINE_ARRAY_WITH_GLOBAL", name, var->file, var->line));
+		} else {
+			//warning
+		}
 	};
 
 	auto get_match_exp_type = [](const string_t& t1, const string_t& t2) {
@@ -597,11 +785,11 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		return (NodePtr)std::make_shared<ExpIntegerValue>(i);
 	};
 
-	parser["Core"] = [&](const string_t& name, const string_t& pl) {
+	parser["Code"] = [&](const string_t& name, const string_t& pl) {
 		auto func = get_function(name);
 		if (pl.length() > 0) {
 			add_error(error_format("ERROR_CODE_HAS_CODE", name));
-		} else if (func && func->args.size() > 0) {
+		} else if (func && func->args.list.size() > 0) {
 			add_error(error_format("ERROR_CODE_HAS_CODE", name));
 		}
 		return (NodePtr)std::make_shared<ExpCodeValue>(name);
@@ -626,9 +814,37 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		return (NodePtr)call;
 	};
 
-	//parser["Vari"] = [&](const string_t& name, std::shared_ptr<ExpNode> exp) {
-	//
-	//};
+
+	parser["Vari"] = [&](const string_t& name, NodePtr index) {
+		auto var = get_variable(name);
+
+		check_get(var, true);
+
+		auto index_exp = CastNode<ExpNode>(index);
+		auto exp_vari = std::make_shared<ExpVari>(var, index_exp);
+
+		return (NodePtr)exp_vari;
+	};
+
+
+	parser["Var"] = [&](const string_t& name) {
+		auto var = get_variable(name);
+		check_get(var, false);
+
+		auto exp_var = std::make_shared<ExpVar>(var);
+
+		return (NodePtr)exp_var;
+	};
+
+	parser["Neg"] = [&](NodePtr exp_node) {
+
+		auto exp = CastNode<ExpNode>(exp_node);
+
+		auto exp_neg = std::make_shared<ExpNeg>(exp);
+
+		return (NodePtr)exp_neg;
+	};
+
 
 	parser["Binary"] = [&](sol::variadic_args args) {
 		if (args.size() == 1) {
@@ -665,13 +881,6 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		return sol::lua_value((NodePtr)first);
 	};
 
-	
-	//
-	//
-	//parser["Vari"] = [&](const string_t& name, sol::object) {
-	//	
-	//};
-
 	parser["Type"] = [&](const string_t& name, const string_t& extends) {
 		check_type(extends);
 		check_name(name);
@@ -682,6 +891,154 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		types.save(name, type);
 
 		return type;
+	};
+
+	size_t globals_start_line = 0;
+
+	parser["GlobalsStart"] = [&]() {
+		globals_start_line = linecount;
+	};
+
+	parser["GlobalsEnd"] = [&](const string_t& str) {
+		if (str.length() == 0) {
+			add_error(error_format("ERROR_ENDGLOBALS", globals_start_line));
+		}
+	};
+
+	parser["Globals"] = [&]() {
+
+	};
+
+	parser["Global"] = [&](const string_t& constant, const string_t& type, const string_t& array, const string_t& name, NodePtr exp) {
+		check_name(name);
+		check_new_name(name);
+		check_type(type); 
+
+		bool is_const = !constant.empty();
+
+		if (is_const && !exp) {
+			add_error(error_format("ERROR_CONSTANT_INIT"));
+		}
+
+		bool is_array = !array.empty();
+		if (is_array) {
+			if (exp) {
+				add_error(error_format("ERROR_ARRAY_INIT"));
+			}
+			if (type == "code") {
+				add_error(error_format("ERROR_CODE_ARRAY"));
+			}
+		}
+
+		if (exp) {
+			if (exp->type == "call") {
+				auto call = CastNode<CallNode>(exp);
+
+				switch (hash_s(call->name))
+				{
+				case "OrderId"s_hash:
+				case "OrderId2String"s_hash:
+				case "UnitId2String"s_hash:
+					//这几个会返回null 
+					add_error(error_format("WARNING_NULL_NATIVE_IN_GLOBAL", call->name));
+					break;
+				case "GetObjectName"s_hash:
+				case "CreateQuest"s_hash:
+				case "CreateMultiboard"s_hash:
+				case "CreateLeaderboard"s_hash:
+					//这几个会崩溃
+					add_error(error_format("WARNING_CRASH_NATIVE_IN_GLOBAL", call->name));
+					break;
+				default:
+					break;
+				}
+			}
+		}
+
+		auto global = std::make_shared<GlobalNode>(is_const, type, name, is_array, file, linecount);
+
+		global->exp = CastNode<ExpNode>(exp);
+
+		globals.save(name, global);
+
+		return (NodePtr)global;
+	};
+
+
+	parser["LocalDef"] = [&](const string_t& type, const string_t& array, const string_t& name) {
+
+		bool is_array = !array.empty();
+
+		check_name(name);
+		check_new_name_functions(name);
+		check_new_name_types(name);
+		check_type(type);
+
+		check_local_with_args(name, type, is_array);
+		check_local_with_globals(name, type, is_array);
+
+		if (is_array) {
+			if (type == "code") {
+				add_error(error_format("ERROR_CODE_ARRAY"));
+			}
+		}
+
+		auto local = std::make_shared<LocalNode>(type, name, is_array, file, linecount);
+
+		auto func = functions.back();
+
+		func->locals.save(name, local);
+		
+		auto global = globals.find(name);
+		if (global) { //如果局部变量与全局变量同名 可以影响全局变量
+			global->vtype = type;
+			global->is_array = is_array;
+		}
+		
+		return (NodePtr)local;
+	};
+
+
+	
+
+	parser["Local"] = [&](NodePtr loc, NodePtr init_exp){
+
+		auto local = CastNode<LocalNode>(loc);
+		auto exp = CastNode<ExpNode>(init_exp);
+
+		if (local && exp) {
+			local->has_set = true;
+
+			local->exp = exp;
+
+			if (local->is_array) {
+				add_error(error_format("ERROR_ARRAY_INIT"));
+			}
+
+			if (!is_extends(exp->vtype, local->vtype)) {
+				add_error(error_format("ERROR_SET_TYPE", local->name, local->vtype, exp->vtype));
+			} 
+			auto func = functions.back();
+			
+			if (func && exp->type == "call") { // 局部变量的初始值不能递归自己
+				auto call = CastNode<CallNode>(init_exp);
+				if (func->name == call->name) {
+					add_error(error_format("ERROR_LOCAL_RECURSION"));
+				}
+			}
+		}
+		return loc;
+	};
+
+
+
+	parser["Point"] = [&]() {
+		sol::variadic_results res;
+
+		res.push_back(sol::make_object(lua, file));
+		res.push_back(sol::make_object(lua, linecount));
+
+		return res;
 	};
 
 	parser["errorpos"] = [](int line, int col, string_t at_line, string_t err) {
