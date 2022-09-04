@@ -337,6 +337,15 @@ struct GlobalNode : LocalNode {
 	}
 };
 
+struct GlobalsNode : Node {
+
+	Container<GlobalNode>* globals;
+
+	GlobalsNode() {
+		type = "globals";
+		globals = nullptr;
+	}
+};
 
 struct FunctionNode : Node {
 	string_t file;
@@ -942,7 +951,13 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	};
 
 	parser["Globals"] = [&]() {
+		
+		//printf("size %i\n", gls.size());
 
+		auto gs = std::make_shared<GlobalsNode>();
+		gs->globals = &globals;
+
+		return (NodePtr)gs;
 	};
 
 	parser["Global"] = [&](const string_t& constant, const string_t& type, const string_t& array, const string_t& name, NodePtr exp) {
@@ -1124,8 +1139,9 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		printf(msg.c_str());
 	};
 
-	NodePtr res = (peg_parser(script, parser));
+	//peg_parser(script, parser);
 
+	NodePtr res = (peg_parser(script, parser));
 	std::cout << res->type << std::endl;
 	return;
 }

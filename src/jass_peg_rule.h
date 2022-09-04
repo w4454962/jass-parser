@@ -111,14 +111,14 @@ static const char jass_peg_rule[] = R"(
 --            )
 --        ->  Loop
 --
---
---Globals     <-  GLOBALS -> GlobalsStart Nl^MISS_NL
---                    {| (Nl / Global)* |} -> Globals
---                {(ENDGLOBALS Ed^MISS_NL)?} -> GlobalsEnd
---Global      <-  !GLOBALS !FUNCTION !NATIVE
---                ({CONSTANT?} Name {ARRAY?} Name (ASSIGN Exp)?)
---            ->  Global
---
+
+Globals     <-  GLOBALS -> GlobalsStart Nl^MISS_NL
+                    {| (Nl / Global)* |} -> Globals
+                {(ENDGLOBALS Ed^MISS_NL)?} -> GlobalsEnd
+Global      <-  !GLOBALS !FUNCTION !NATIVE
+                ({CONSTANT?} Name {ARRAY?} Name (ASSIGN Exp)?)
+            ->  Global
+
 Local       <-  (LocalDef LocalExp?)
             ->  Local
             /   TYPE Ignore

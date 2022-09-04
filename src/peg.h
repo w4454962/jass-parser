@@ -12,6 +12,7 @@ local parser
 local defs = setmetatable({}, {__index = function (self, key)
     self[key] = function (...)
         if parser[key] then
+            print(key, ...)
             return parser[key](...)
         end
     end
