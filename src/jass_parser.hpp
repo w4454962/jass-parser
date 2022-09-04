@@ -204,10 +204,10 @@ struct ExpBinary : ExpNode {
 
 	string_t op;
 
-	std::shared_ptr<ExpNode> first;
-	std::shared_ptr<ExpNode> second;
+	ExpPtr first;
+	ExpPtr second;
 
-	ExpBinary(const string_t& vtype_, std::shared_ptr<ExpNode>& first_, const string_t& op_, std::shared_ptr<ExpNode>& second_)
+	ExpBinary(const string_t& vtype_, ExpPtr& first_, const string_t& op_, ExpPtr& second_)
 		: op(op_),
 		first(first_),
 		second(second_)
@@ -219,14 +219,59 @@ struct ExpBinary : ExpNode {
 
 struct ExpUnary :ExpNode {
 	string_t op;
-	std::shared_ptr<ExpNode> first;
+	ExpPtr first;
 
-	ExpUnary(const string_t& vtype_, std::shared_ptr<ExpNode>& first_, const string_t& op_)
+	ExpUnary(const string_t& vtype_, ExpPtr& first_, const string_t& op_)
 		: op(op_),
 		first(first_)
 	{
 		type = "exp_unary";
 		vtype = vtype_;
+	}
+};
+
+
+struct ExpCall : ExpNode {
+	string_t name;
+	std::vector<ExpPtr> params;
+
+	bool is_action;
+
+	ExpCall(const string_t& func_name_, const string_t& func_return_type)
+		: name(func_name_)
+	{
+		type = "exp_call";
+		vtype = func_return_type;
+		is_action = false;
+	}
+};
+
+
+struct ActionSet : Node {
+	string_t name;
+
+	ExpPtr exp;
+
+	ActionSet(const string_t& name_, ExpPtr& exp_)
+		: name(name_),
+		exp(exp_)
+	{
+		type = "action_set";
+	}
+};
+
+
+struct ActionSetIndex : Node {
+	string_t name;
+	ExpPtr index;
+	ExpPtr exp;
+
+	ActionSetIndex(const string_t& name_, ExpPtr& index_, ExpPtr& exp_)
+		: name(name_),
+		index(index_),
+		exp(exp_)
+	{
+		type = "action_setarray";
 	}
 };
 
@@ -250,16 +295,6 @@ struct TypeNode : Node {
 
 
 
-struct CallNode :Node {
-	string_t name;
-	std::vector<std::shared_ptr<ExpNode>> params;
-
-	CallNode() {
-		type = "call";
-	}
-};
-
-
 struct ArgNode : VarBaseNode {
 
 	ArgNode(const string_t& type_, const string_t& name_)
@@ -277,7 +312,7 @@ struct LocalNode : VarBaseNode {
 	
 	bool is_array;
 
-	std::shared_ptr<ExpNode> exp;
+	ExpPtr exp;
 
 	LocalNode(const string_t& type_, const string_t& name_, bool is_array_, const string_t& file_, size_t line_)
 		: is_array(is_array),
@@ -458,7 +493,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	};
 
 
-	auto check_call = [&](const std::shared_ptr<FunctionNode>& func, const std::shared_ptr<CallNode>& call) {
+	auto check_call = [&](const std::shared_ptr<FunctionNode>& func, const std::shared_ptr<ExpCall>& call) {
 		if (func->name.empty()) {
 			return;
 		}
@@ -518,7 +553,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	};
 
 
-	auto check_set = [&](VarPtr& var, bool need_array, ExpPtr& index, ExpPtr& exp) {
+	auto check_set = [&](VarPtr var, bool need_array, ExpPtr index, ExpPtr exp) {
 		if (!var) return;
 		auto& name = var->name;
 
@@ -546,7 +581,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		}
 	};
 
-	auto check_get = [&](VarPtr& var, bool need_array) {
+	auto check_get = [&](VarPtr var, bool need_array) {
 		if (!var) return;
 
 		auto& name = var->name;
@@ -631,7 +666,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		return first->name == second->name;
 	};
 
-	auto get_two_exp_type = [&](std::shared_ptr<ExpNode>& first, const string_t& op, std::shared_ptr<ExpNode>& second) {
+	auto get_two_exp_type = [&](ExpPtr& first, const string_t& op, ExpPtr& second) {
 		uint32_t byte = 0;
 		for (auto c : op) { 
 			byte = (byte << 8) | c; 
@@ -802,11 +837,12 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			add_error(error_format("ERROR_CALL_IN_CONSTANT", name));
 		}
 
-		auto call = std::make_shared<CallNode>();
-		call->name = name;
+		auto call = std::make_shared<ExpCall>(name, func->returns);
+		
+		call->is_action = true;
 
 		for (auto v : args) {
-			call->params.push_back(v);
+			call->params.push_back(CastNode<ExpNode>(v));
 		}
 
 		check_call(func, call);
@@ -931,8 +967,8 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		}
 
 		if (exp) {
-			if (exp->type == "call") {
-				auto call = CastNode<CallNode>(exp);
+			if (exp->type == "exp_call") {
+				auto call = CastNode<ExpCall>(exp);
 
 				switch (hash_s(call->name))
 				{
@@ -1020,8 +1056,8 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			} 
 			auto func = functions.back();
 			
-			if (func && exp->type == "call") { // 局部变量的初始值不能递归自己
-				auto call = CastNode<CallNode>(init_exp);
+			if (func && exp->type == "exp_call") { // 局部变量的初始值不能递归自己
+				auto call = CastNode<ExpCall>(init_exp);
 				if (func->name == call->name) {
 					add_error(error_format("ERROR_LOCAL_RECURSION"));
 				}
@@ -1040,6 +1076,48 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		return res;
 	};
+
+	parser["Action"] = [](const string_t& file, size_t line, NodePtr action) {
+
+		return action;
+	};
+
+	parser["ECall"] = [&](const string_t& name, sol::variadic_args args) {
+		auto func = get_function(name);
+
+		auto call = std::make_shared<ExpCall>(func->name, func->returns);
+
+		for (auto v : args) {
+			call->params.push_back(CastNode<ExpNode>(v));
+		}
+
+		check_call(func, call);
+
+		return (NodePtr)call;
+	};
+
+	parser["Set"] = [&](const string_t& name, sol::variadic_args args) {
+		auto var = get_variable(name);
+		if (args.size() == 1) {
+			auto exp = CastNode<ExpNode>(args[0]);
+			check_set(var, false, nullptr, exp);
+			var->has_set = true;
+
+			auto set = std::make_shared<ActionSet>(name, exp);
+			
+			return (NodePtr)set;
+
+		} else {
+			auto index = CastNode<ExpNode>(args[0]);
+			auto exp = CastNode<ExpNode>(args[1]);
+			check_set(var, true, index, exp);
+
+			auto setindex = std::make_shared<ActionSetIndex>(name, index, exp);
+
+			return (NodePtr)setindex;
+		}
+	};
+
 
 	parser["errorpos"] = [](int line, int col, string_t at_line, string_t err) {
 		std::string msg = std::format("error:{}:{}:   {}:\n{}\n", line, col, err, at_line);
