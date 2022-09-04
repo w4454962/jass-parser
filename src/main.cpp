@@ -108,9 +108,9 @@ int main(int argn, char** argv) {
 
 
 	std::string script = R"(globals 
-	integer a = 0
-	integer b = 0
-	integer c = 0
+	integer a = 1 + 2 * 3 / 4
+	string b = "hello"
+	boolean c 
 endglobals)";
 	ParseResult result;
 	jass_parser(lua, script, result);

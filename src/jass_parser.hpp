@@ -952,15 +952,17 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	parser["Globals"] = [&]() {
 		
-		//printf("size %i\n", gls.size());
-
 		auto gs = std::make_shared<GlobalsNode>();
 		gs->globals = &globals;
 
 		return (NodePtr)gs;
 	};
 
-	parser["Global"] = [&](const string_t& constant, const string_t& type, const string_t& array, const string_t& name, NodePtr exp) {
+	parser["Global"] = [&](const string_t& constant, const string_t& type, const string_t& array, const string_t& name, sol::object lexp) {
+		NodePtr exp;
+		if (lexp.get_type() == sol::type::userdata) {
+			exp = lexp.as<NodePtr>();
+		}
 		check_name(name);
 		check_new_name(name);
 		check_type(type); 
@@ -1012,7 +1014,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		globals.save(name, global);
 
-		return (NodePtr)global;
+		//return (NodePtr)global;
 	};
 
 
