@@ -128,6 +128,9 @@ globals
 	integer a = 1 + 2 * 3 / 4
 	string b = "hello"
 	boolean c 
+
+	integer d = test1(a)
+
 endglobals
 
 function code1 takes nothing returns nothing 

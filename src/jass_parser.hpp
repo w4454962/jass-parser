@@ -49,6 +49,9 @@ struct Container
 	}
 
 	object_ptr back() {
+		if (list.empty()) {
+			return object_ptr();
+		}
 		return list.back();
 	}
 };
@@ -437,7 +440,7 @@ struct GlobalNode : LocalNode {
 	bool is_const;
 
 	GlobalNode(bool constant, const string_t& type_, const string_t& name_, bool is_array_, const string_t& file_, size_t line_)
-		: LocalNode(type_, name, is_array, file_, line_)
+		: LocalNode(type_, name_, is_array_, file_, line_)
 	{
 		type = "var_global";
 		is_const = constant;
@@ -816,7 +819,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		}
 
 		auto func = functions.back();
-		if (var->type == "var_global" && CastNode<GlobalNode>(var)->is_const &&func) {
+		if (!func && var->type == "var_global" && CastNode<GlobalNode>(var)->is_const) {
 			log.error(position(), "ERROR_SET_CONSTANT", name);
 		}
 
@@ -1230,6 +1233,8 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			if (exp->type == "exp_call") {
 				auto call = CastNode<ExpCall>(exp);
 
+				auto func = get_function(call->name);
+
 				switch (hash_s(call->name))
 				{
 				case "OrderId"s_hash:
@@ -1254,6 +1259,11 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		auto global = std::make_shared<GlobalNode>(is_const, type, name, is_array, file, linecount);
 
 		global->exp = CastNode<ExpNode>(exp);
+
+		if (global->exp) {
+			VarPtr var = global;
+			check_set(var, is_array, ExpPtr(), global->exp);
+		}
 
 		globals.save(name, global);
 
