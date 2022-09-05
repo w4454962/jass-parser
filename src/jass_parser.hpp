@@ -14,6 +14,8 @@ inline std::string error_format(std::string_view msg, Args... args) {
 typedef std::shared_ptr<struct Node> NodePtr;
 typedef std::shared_ptr<struct VarBaseNode> VarPtr;
 typedef std::shared_ptr<struct ExpNode> ExpPtr;
+typedef std::shared_ptr<struct ActionNode> ActionPtr;
+
 
 template<typename N, typename T>
 inline auto CastNode(const T& v) {
@@ -246,8 +248,20 @@ struct ExpCall : ExpNode {
 	}
 };
 
+typedef std::function<bool(ActionPtr node, int branch_index)> ActionFilter;
 
-struct ActionSet : Node {
+struct ActionNode :Node {
+	bool has_return;
+	
+	ActionNode() {
+		type = "action";
+		has_return = false;
+	}
+
+	virtual void each_childs(ActionFilter filter, int owner_branch_index = 0) { }
+};
+
+struct ActionSet : ActionNode {
 	string_t name;
 
 	ExpPtr exp;
@@ -261,7 +275,7 @@ struct ActionSet : Node {
 };
 
 
-struct ActionSetIndex : Node {
+struct ActionSetIndex : ActionNode {
 	string_t name;
 	ExpPtr index;
 	ExpPtr exp;
@@ -275,6 +289,49 @@ struct ActionSetIndex : Node {
 	}
 };
 
+struct ActionReturn : ActionNode {
+	ExpPtr value;
+
+	ActionReturn(ExpPtr exp_) 
+		:value(exp_)
+	{
+		type = "action_return";
+		has_return = true;
+	}
+};
+
+struct ActionExit : ActionNode {
+	ExpPtr exp;
+
+	ActionExit(ExpPtr exp_)
+		:exp(exp_)
+	{
+		type = "action_exitwhen";
+	}
+};
+
+struct IfNode : ActionNode {
+	int branch_index;
+	ExpPtr condition;
+	std::vector<ActionPtr> actions;
+
+	IfNode(int brach_index_) 
+		:branch_index(brach_index_)
+	{
+		type = "if";
+	}
+};
+
+struct ActionIf : ActionNode {
+	std::shared_ptr<IfNode> if_node;
+	std::vector<std::shared_ptr<IfNode>> elseif_node;
+	std::vector<ActionPtr> else_node;
+
+	ActionIf() {
+		type = "action_if";
+	}
+
+};
 
 struct TypeNode : Node {
 	string_t file;
@@ -351,12 +408,14 @@ struct FunctionNode : Node {
 	string_t file;
 	size_t line;
 	string_t vtype; //return type
-	bool is_constant;
+	bool is_const;
 	string_t name;
 	string_t returns;
 	Container<ArgNode> args;
 
 	Container<LocalNode> locals;
+
+	std::vector<ActionPtr> actions;
 
 	FunctionNode() {
 		type = "function";
@@ -364,12 +423,39 @@ struct FunctionNode : Node {
 };
 
 
-struct ParseError
+enum class ErrorLevel : uint8_t {
+	error,
+	warning
+};
+
+struct ParseErrorMessage
 {
+	ErrorLevel level;
 	string_t file;
-	string_t err;
+	string_t message;
 	size_t line;
-	string_t at_line;
+	size_t column;
+};
+
+
+typedef std::shared_ptr<ParseErrorMessage> MsgPtr;
+struct ParseLog {
+	std::vector<MsgPtr> errors;
+	std::vector<MsgPtr> warnings;
+
+	template<typename... Args>
+	void error(MsgPtr msg, const std::string_view& fmt, Args... args) {
+		msg->message = std::vformat(fmt, _STD make_format_args(args...));
+		msg->level = ErrorLevel::error;
+		errors.push_back(msg);
+	}
+
+	template<typename... Args>
+	void warning(MsgPtr msg, const std::string_view& fmt, Args... args) {
+		msg->message = std::vformat(fmt, _STD make_format_args(args...));
+		msg->level = ErrorLevel::warning;
+		warnings.push_back(msg);
+	}
 };
 
 struct ParseResult {
@@ -380,7 +466,7 @@ struct ParseResult {
 	
 	std::unordered_map<size_t, string_t> comments;
 
-	std::vector<ParseError> errors;
+	ParseLog log;
 
 	ParseResult() {
 		//基础数据类型
@@ -419,7 +505,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	sol::table parser = lua.create_table();
 	
-	size_t linecount = 0;
+	size_t linecount = 0, column = 0, loop_stack_count = 0;
 
 	string_t file = "war3map.j";
 
@@ -427,16 +513,19 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	auto& functions = result.functions;
 	auto& types = result.types;
 	auto& globals = result.globals;
-	
-	auto add_error = [&](const string_t& msg) {
-		result.errors.push_back({
-			file, msg, linecount,
-		});
+	auto& log = result.log;
+
+	auto position = [&]() {
+		auto msg = std::make_shared<ParseErrorMessage>();
+		msg->file = file;
+		msg->line = linecount;
+		msg->column = 0;
+		return msg;
 	};
 
 	auto check_name = [&](const string_t& name) {
 		if (keywords.find(name) != keywords.end()) {
-			add_error(error_format("ERROR_KEY_WORD", name));
+			log.error(position(), "ERROR_KEY_WORD", name);
 		}
 	};
 
@@ -444,24 +533,24 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		auto type = types.find(name);
 		if (type) {
 			if (!type->parent) {
-				add_error(error_format("ERROR_REDEFINE_TYPE", name, type->file, type->line));
+				log.error(position(), "ERROR_REDEFINE_TYPE", name, type->file, type->line);
 			}
 			else {
-				add_error(error_format("ERROR_DEFINE_NATIVE_TYPE", name));
+				log.error(position(), "ERROR_DEFINE_NATIVE_TYPE", name);
 			}
 		}
 	};
 	auto check_new_name_globals = [&](const string_t& name) {
 		auto global = globals.find(name);
 		if (global) {
-			add_error(error_format("ERROR_REDEFINE_GLOBAL", name, global->file, global->line));
+			log.error(position(), "ERROR_REDEFINE_GLOBAL", name, global->file, global->line);
 		}
 	};
 
 	auto check_new_name_functions = [&](const string_t& name) {
 		auto func = functions.find(name);
 		if (func) {
-			add_error(error_format("ERROR_REDEFINE_FUNCTION", name, func->file, func->line));
+			log.error(position(), "ERROR_REDEFINE_FUNCTION", name, func->file, func->line);
 		}
 	};
 
@@ -473,7 +562,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	auto check_type = [&](const string_t& type) {
 		if (!type.empty() && !types.find(type)) {
-			add_error(error_format("ERROR_UNDEFINE_TYPE", type));
+			log.error(position(), "ERROR_UNDEFINE_TYPE", type);
 		}
 	};
 
@@ -496,7 +585,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		auto func = functions.find(name);
 		if (!func) {
-			add_error(error_format("FUNCTION_NO_EXISTS", name));
+			log.error(position(), "FUNCTION_NO_EXISTS", name);
 		}
 		return func;
 	};
@@ -520,10 +609,10 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 							miss += ",";
 						miss += std::format("{} {}", arg->type, arg->name);
 					}
-					add_error(error_format("ERROR_LESS_ARGS", func->name, args_count, params_count, miss));
+					log.error(position(), "ERROR_LESS_ARGS", func->name, args_count, params_count, miss);
 				}
 				else {
-					add_error(error_format("ERROR_MORE_ARGS", func->name, args_count, params_count));
+					log.error(position(), "ERROR_MORE_ARGS", func->name, args_count, params_count);
 				}
 			} else {
 				for (size_t i = 0; i < args_count; i++) {
@@ -531,14 +620,14 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 					auto& exp = call->params[i];
 					if (arg->vtype != exp->vtype) {
 						if (!is_extends(exp->vtype, arg->vtype)) {
-							add_error(error_format("ERROR_WRONG_ARG", func->name, i, arg->vtype, exp->vtype));
+							log.error(position(), "ERROR_WRONG_ARG", func->name, i, arg->vtype, exp->vtype);
 						}
 					}
 				}
 			}
 			
 		} else if (params_count > 0) {
-			add_error(error_format("ERROR_WASTE_ARGS", func->name, params_count));
+			log.error(position(), "ERROR_WASTE_ARGS", func->name, params_count);
 		} 
 	};
 
@@ -568,25 +657,25 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		if (need_array) {
 			if (var->type == "var_arg" || !CastNode<LocalNode>(var)->is_array) {
-				add_error(error_format("ERROR_WASTE_INDEX", name));
+				log.error(position(), "ERROR_WASTE_INDEX", name);
 			}
 		} else {
 			if (var->type != "var_arg" && CastNode<LocalNode>(var)->is_array) {
-				add_error(error_format("ERROR_NO_INDEX", name));
+				log.error(position(), "ERROR_NO_INDEX", name);
 			}
 		}
 
 		if (index && !is_extends(index->vtype, "integer")) {
-			add_error(error_format("ERROR_INDEX_TYPE", name, index->vtype));
+			log.error(position(), "ERROR_INDEX_TYPE", name, index->vtype);
 		}
 
 		auto func = functions.back();
 		if (var->type == "var_global" && CastNode<GlobalNode>(var)->is_const &&func) {
-			add_error(error_format("ERROR_SET_CONSTANT", name));
+			log.error(position(), "ERROR_SET_CONSTANT", name);
 		}
 
 		if (exp && is_extends(exp->vtype, var->vtype)) {
-			add_error(error_format("ERROR_SET_TYPE", name, var->type, exp->vtype));
+			log.error(position(), "ERROR_SET_TYPE", name, var->type, exp->vtype);
 		}
 	};
 
@@ -597,11 +686,14 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		if (need_array) {
 			if (var->type == "var_arg" || !CastNode<LocalNode>(var)->is_array ) {
-				add_error(error_format("ERROR_WASTE_INDEX", name));
+				log.error(position(), "ERROR_WASTE_INDEX", name);
 			}
 		} else {
 			if (var->type != "var_arg" && CastNode<LocalNode>(var)->is_array) {
-				add_error(error_format("ERROR_NO_INDEX", name));
+				log.error(position(), "ERROR_NO_INDEX", name);
+			}
+			if (!var->has_set) {
+				log.warning(position(), "ERROR_GET_UNINIT", name);
 			}
 		}
 	};
@@ -613,16 +705,15 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		if (!var) return; 
 
 		if (is_array) {
-			add_error(error_format("ERROR_REDEFINE_ARRAY_WITH_ARG", func->name, func->file, func->line));
+			log.error(position(), "ERROR_REDEFINE_ARRAY_WITH_ARG", func->name, func->file, func->line);
 			return;
 		}
 
 		if (type != var->vtype) {
-			add_error(error_format("ERROR_REDEFINE_ARRAY_WITH_ARG", name, type, func->name, var->vtype, func->file, func->line));
+			log.error(position(), "ERROR_REDEFINE_ARRAY_WITH_ARG", name, type, func->name, var->vtype, func->file, func->line);
 			return;
 		}
-		//warning
-		//add_error(error_format("ERROR_REDEFINE_ARG", name, func->file, func->line));
+		log.warning(position(), "ERROR_REDEFINE_ARG", name, func->file, func->line);
 	};
 
 
@@ -631,9 +722,9 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		if (!var) return;
 
 		if (is_array && !var->is_array) {
-			add_error(error_format("ERROR_REDEFINE_ARRAY_WITH_GLOBAL", name, var->file, var->line));
+			log.error(position(), "ERROR_REDEFINE_ARRAY_WITH_GLOBAL", name, var->file, var->line);
 		} else {
-			//warning
+			log.warning(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
 		}
 	};
 
@@ -695,27 +786,27 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 				exp_type = get_connect_exp_type(t1, t2);
 			}
 			if (exp_type.empty()) {
-				add_error(error_format("ERROR_ADD", t1, t2));
+				log.error(position(), "ERROR_ADD", t1, t2);
 			}
 			break;
 		case '-':
 			exp_type = get_match_exp_type(t1, t2);
 			if (exp_type.empty()) {
-				add_error(error_format("ERROR_SUB", t1, t2));
+				log.error(position(), "ERROR_SUB", t1, t2);
 			}
 			break;
 		
 		case '*':
 			exp_type = get_match_exp_type(t1, t2);
 			if (exp_type.empty()) {
-				add_error(error_format("ERROR_MUL", t1, t2));
+				log.error(position(), "ERROR_MUL", t1, t2);
 			}
 			break;
 		
 		case '/':
 			exp_type = get_match_exp_type(t1, t2);
 			if (exp_type.empty()) {
-				add_error(error_format("ERROR_DIV", t1, t2));
+				log.error(position(), "ERROR_DIV", t1, t2);
 			}
 			break;
 		
@@ -723,7 +814,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			if (t1  == "integer" && t2 == "integer") {
 				exp_type = t1;
 			} else {
-				add_error(error_format("ERROR_MOD"));
+				log.error(position(), "ERROR_MOD");
 			}
 			break;
 		
@@ -736,7 +827,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			} else if (is_base_type_eq(t1, t2)) {
 				exp_type = "boolean";
 			} else {
-				add_error(error_format("ERROR_EQUAL", t1, t2));
+				log.error(position(), "ERROR_EQUAL", t1, t2);
 			}
 			break;
 		case '>':
@@ -747,7 +838,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			if (!get_match_exp_type(t1, t2).empty()) {
 				exp_type = "boolean";
 			} else {
-				add_error(error_format("ERROR_COMPARE", t1, t2));
+				log.error(position(), "ERROR_COMPARE", t1, t2);
 			}
 			break;
 		case 'and':
@@ -755,13 +846,13 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			if (t1 == "boolean" && t2 == "boolean") {
 				exp_type = "boolean";
 			} else if (byte == 'and') {
-				add_error(error_format("ERROR_AND", t1, t2));
+				log.error(position(), "ERROR_AND", t1, t2);
 			} else if (byte == 'or') {
-				add_error(error_format("ERROR_OR", t1, t2));
+				log.error(position(), "ERROR_OR", t1, t2);
 			}
 			break;
 		default:
-			add_error(error_format("UNKNOWN_EXP"));
+			log.error(position(), "UNKNOWN_EXP");
 			break;
 		}
 		return exp_type;
@@ -832,9 +923,9 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	parser["Code"] = [&](const string_t& name, const string_t& pl) {
 		auto func = get_function(name);
 		if (pl.length() > 0) {
-			add_error(error_format("ERROR_CODE_HAS_CODE", name));
+			log.error(position(), "ERROR_CODE_HAS_CODE", name);
 		} else if (func && func->args.list.size() > 0) {
-			add_error(error_format("ERROR_CODE_HAS_CODE", name));
+			log.warning(position(), "ERROR_CODE_HAS_CODE", name);
 		}
 		return (NodePtr)std::make_shared<ExpCodeValue>(name);
 	};
@@ -842,8 +933,8 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	parser["ACall"] = [&](const string_t& name, sol::variadic_args args) {
 		auto func = functions.find(name);
 		auto current = functions.back();
-		if (!func || !current || current->is_constant != func->is_constant) {
-			add_error(error_format("ERROR_CALL_IN_CONSTANT", name));
+		if (!func || !current || current->is_const != func->is_const) {
+			log.error(position(), "ERROR_CALL_IN_CONSTANT", name);
 		}
 
 		auto call = std::make_shared<ExpCall>(name, func->returns);
@@ -918,7 +1009,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			std::string op = args[i];
 			string_t exp_type = "boolean";
 			if (op == "not" && first->vtype != "boolean") {
-				add_error(error_format("ERROR_NOT_TYPE"));
+				log.error(position(), "ERROR_NOT_TYPE");
 			}
 			first = std::make_shared<ExpUnary>(exp_type, first, op);
 		}
@@ -946,7 +1037,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	parser["GlobalsEnd"] = [&](const string_t& str) {
 		if (str.length() == 0) {
-			add_error(error_format("ERROR_ENDGLOBALS", globals_start_line));
+			log.error(position(), "ERROR_ENDGLOBALS", globals_start_line);
 		}
 	};
 
@@ -970,16 +1061,16 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		bool is_const = !constant.empty();
 
 		if (is_const && !exp) {
-			add_error(error_format("ERROR_CONSTANT_INIT"));
+			log.error(position(), "ERROR_CONSTANT_INIT");
 		}
 
 		bool is_array = !array.empty();
 		if (is_array) {
 			if (exp) {
-				add_error(error_format("ERROR_ARRAY_INIT"));
+				log.error(position(), "ERROR_ARRAY_INIT");
 			}
 			if (type == "code") {
-				add_error(error_format("ERROR_CODE_ARRAY"));
+				log.error(position(), "ERROR_CODE_ARRAY");
 			}
 		}
 
@@ -993,14 +1084,14 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 				case "OrderId2String"s_hash:
 				case "UnitId2String"s_hash:
 					//这几个会返回null 
-					add_error(error_format("WARNING_NULL_NATIVE_IN_GLOBAL", call->name));
+					log.warning(position(), "WARNING_NULL_NATIVE_IN_GLOBAL", call->name);
 					break;
 				case "GetObjectName"s_hash:
 				case "CreateQuest"s_hash:
 				case "CreateMultiboard"s_hash:
 				case "CreateLeaderboard"s_hash:
 					//这几个会崩溃
-					add_error(error_format("WARNING_CRASH_NATIVE_IN_GLOBAL", call->name));
+					log.warning(position(), "WARNING_CRASH_NATIVE_IN_GLOBAL", call->name);
 					break;
 				default:
 					break;
@@ -1032,7 +1123,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		if (is_array) {
 			if (type == "code") {
-				add_error(error_format("ERROR_CODE_ARRAY"));
+				log.error(position(), "ERROR_CODE_ARRAY");
 			}
 		}
 
@@ -1065,18 +1156,18 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			local->exp = exp;
 
 			if (local->is_array) {
-				add_error(error_format("ERROR_ARRAY_INIT"));
+				log.error(position(), "ERROR_ARRAY_INIT");
 			}
 
 			if (!is_extends(exp->vtype, local->vtype)) {
-				add_error(error_format("ERROR_SET_TYPE", local->name, local->vtype, exp->vtype));
+				log.error(position(), "ERROR_SET_TYPE", local->name, local->vtype, exp->vtype);
 			} 
 			auto func = functions.back();
 			
 			if (func && exp->type == "exp_call") { // 局部变量的初始值不能递归自己
 				auto call = CastNode<ExpCall>(init_exp);
 				if (func->name == call->name) {
-					add_error(error_format("ERROR_LOCAL_RECURSION"));
+					log.error(position(), "ERROR_LOCAL_RECURSION");
 				}
 			}
 		}
@@ -1135,6 +1226,62 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		}
 	};
 
+	parser["Return"] = [&]() {
+		auto func = functions.back();
+
+		if (func && func->returns != "nothing") {
+			log.error(position(), "ERROR_MISS_RETURN", func->name, func->returns);
+		}
+
+		auto ret = std::make_shared<ActionReturn>(nullptr);
+
+		return (NodePtr)ret;
+	};
+
+
+	parser["ReturnExp"] = [&](NodePtr exp_) {
+
+		auto exp = CastNode<ExpNode>(exp_);
+		
+		auto func = functions.back();
+	
+		if (func && exp) {
+			auto& t1 = func->vtype;
+			auto& t2 = func->vtype;
+	
+			if (t1 != "nothing") {
+				if (t1 == "Real" && t2 == "integer") {
+					log.warning(position(), "ERROR_RETURN_INTEGER_AS_REAL", func->name, t1, t2);
+				} else if (is_extends(t2, t1)) {
+					//rb warning 
+				} else {
+					log.error(position(), "ERROR_MISS_RETURN", func->name, func->returns);
+				}
+			}
+			
+			if (func->is_const && exp->type == "exp_var" && !CastNode<VarBaseNode>(exp)->has_set) {
+				log.warning(position(), "ERROR_CONSTANT_UNINIT", func->name);
+			}
+		}
+		
+		auto ret = std::make_shared<ActionReturn>(exp);
+
+		return (NodePtr)ret;
+	};
+
+	parser["Exit"] = [&](NodePtr exp) {
+		if (loop_stack_count == 0) {
+			log.error(position(), "ERROR_EXITWHEN");
+		}
+		auto exit = std::make_shared<ActionExit>(CastNode<ExpNode>(exp));
+		return (NodePtr)exit;
+	};
+
+	parser["Logic"] = [&](NodePtr chunks, const string_t& endif) {
+		if (endif.empty()) {
+
+		}
+	};
 
 	parser["errorpos"] = [](int line, int col, string_t at_line, string_t err) {
 		std::string msg = std::format("error:{}:{}:   {}:\n{}\n", line, col, err, at_line);
