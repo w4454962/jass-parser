@@ -117,7 +117,7 @@ endglobals
 
 native test takes nothing returns nothing 
 
-native test2 takes integer a returns integer 
+native test2 takes integer a, integer b returns integer 
 
 
 )";

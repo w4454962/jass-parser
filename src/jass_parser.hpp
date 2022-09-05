@@ -1518,12 +1518,12 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	};
 
 	
-	parser["NArgs"] = [&](sol::lua_table takes) {
+	parser["NArgs"] = [&](sol::object takes) {
 		printf("bbbbbbbbbbb\n");
 		return takes;
 	};
 
-	parser["FArgs"] = [&](sol::lua_table takes) {
+	parser["FArgs"] = [&](sol::object takes) {
 
 		printf("cccccccccccccc\n");
 		return takes;
@@ -1534,7 +1534,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		size_t line, 
 		const string_t& constant,
 		const string_t& name,
-		sol::lua_table takes,
+		sol::object takes_,
 		const string_t& returns
 	) {
 		printf("aaaaaaaaaaaaa\m");
@@ -1546,26 +1546,46 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		auto native = std::make_shared<NativeNode>(is_const, name, returns, file, line);
 
-		for (size_t i = 0; i < takes.size(); i += 2) {
-			const string_t& type = takes[i];
-			const string_t& name = takes[i + 1];
+		if (takes_.get_type() == sol::type::table) {
+			sol::lua_table takes = takes_.as<sol::lua_table>();
 
-			auto arg = std::make_shared<ArgNode>(type, name);
+			printf("size %i\n", takes.size());
+			
+			for (size_t i = 0; i < takes.size(); i++) {
+				printf("%i  %i\n", i, takes[i].get_type());
+			}
 
-			auto var = globals.find(name);
-			if (var) {
-				log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+;			for (size_t i = 0; i < takes.size(); i += 2) {
+				const string_t type = takes[i].get<string_t>();
+				const string_t name = takes[i + 1].get<string_t>();
+
+				auto arg = std::make_shared<ArgNode>(type, name);
+
+				auto var = globals.find(name);
+				if (var) {
+					log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+				}
+				if (!types.find(type)) {
+					log.error(position(), "ERROR_UNDEFINE_TYPE", type);
+				}
+				native->args.save(name, arg);
 			}
-			if (!types.find(type)) {
-				log.error(position(), "ERROR_UNDEFINE_TYPE", type);
-			}
-			native->args.save(name, arg);
 		}
+		
 
 		natives.save(name, native);
 
 		return (NodePtr)native;
 	};
+
+	//parser["Native"] = [&](sol::variadic_args args) {
+	//
+	//
+	//	printf("xxxxxxxx  %x\n", args.size());
+	//	for (auto v : args) {
+	//		printf("%i\n", v.get_type());
+	//	}
+	//};
 
 	parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, sol::lua_table takes, const string_t& returns) {
 		check_name(name);
