@@ -107,14 +107,27 @@ int main(int argn, char** argv) {
 	lua.require_script("peg", peg_script, false, "peg");
 
 
-	std::string script = R"(globals 
+	std::string script = R"(
+
+globals 
 	integer a = 1 + 2 * 3 / 4
 	string b = "hello"
 	boolean c 
-endglobals)";
+endglobals
+
+native test takes nothing returns nothing 
+
+native test2 takes integer a returns integer 
+
+
+)";
 	ParseResult result;
 	jass_parser(lua, script, result);
 	
+
+	lua.script("print('finish')");
+
+
 	//printf("%i\n", std::stoi("-1a", 0, 16));
 
 	//lua.script("print(require('ffi'))");

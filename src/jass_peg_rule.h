@@ -2,115 +2,115 @@
 
 static const char jass_peg_rule[] = R"(
 
---Jass        <-  {| (Nl / Chunk)* |} Sp
---
---Chunk       <-  (   Type
---                /   Globals
---                /   Native
---                /   Function
---                -- 错误收集
---                /   Action %{ERROR_ACTION_IN_CHUNK}
---                )
---            ->  Chunk
---
---
---Function    <-  FDef -> FunctionStart Nl^MISS_NL
---                (
---                    FLocals
---                    {|Actions|}
---                ) -> FunctionBody
---                FEnd -> FunctionEnd
---FDef        <-  {CONSTANT?} FUNCTION (Name FTakes FReturns)^SYNTAX_ERROR
---FTakes      <-  TAKES^SYNTAX_ERROR 
---                (
---                    NOTHING -> Nil
---                /   {|NArg (COMMA NArg)*|} -> FArgs
---                /   Sp %{SYNTAX_ERROR}
---                )
---FArg        <-  Name Name
---FReturns    <-  RETURNS^SYNTAX_ERROR Name
---FLocals     <-  {|Locals|} / {} -> Nil
---FEnd        <-  (ENDFUNCTION Ed^MISS_NL)?
---
---
---
---Native      <-  (
---                    {} -> Point
---                    {CONSTANT?} NATIVE Name NTakes NReturns
---                )
---            ->  Native
---NTakes      <-  TAKES
---                (
---                    NOTHING -> Nil
---                /   {|NArg (COMMA NArg)*|} -> NArgs
---                )
---NArg        <-  Name Name
---NReturns    <-  RETURNS^SYNTAX_ERROR Name
---
---
---AError      <-  LOCAL Ignore
---            ->  localInFunction
---            /   TYPE Ignore
---            ->  typeInFunction
---
---            Action      <-  (
---                {} -> Point
---                (ACall / ASet / AReturn / AExit / ALogic / ALoop / AError)
---            )
---        ->  Action
---
---        
---Actions     <-  (Nl / Action)*
---
----- Are you kidding me Blizzard?
---ACall       <-  (DEBUG? CALL Name^SYNTAX_ERROR PL ACallArgs? PR^ERROR_MISS_PR)
---        ->  ACall
---ACallArgs   <-  Exp (COMMA Exp)*
---
---ASet        <-  (SET Name^SYNTAX_ERROR (BL Exp^ERROR_MISS_EXP BR^ERROR_MISS_BR)? ASSIGN^SYNTAX_ERROR Exp^ERROR_MISS_EXP)
---        ->  Set
---
---AReturn     <-  RETURN (ARExp Ed / Sp %{SYNTAX_ERROR})
---ARExp       <-  Ed  -> Return
---        /   Exp -> ReturnExp Ed
---
---AExit       <-  EXITWHEN Exp
---        ->  Exit
---
---ALogic      <-  ({|
---                LIf
---                LElseif*
---                LElse?
---            |}
---            LEnd)
---        ->  Logic
---LIf         <-  (
---                {} -> IfStart
---                IF (Exp THEN)^ERROR_MISS_THEN Nl^MISS_NL
---                    (Actions)
---            )
---        ->  If
---LElseif     <-  (
---                {} -> ElseifStart
---                ELSEIF (Exp THEN)^ERROR_MISS_THEN Nl^MISS_NL
---                    (Actions)
---            )
---        ->  Elseif
---LElse       <-  (
---                {} -> ElseStart
---                ELSE Nl^MISS_NL
---                    (Actions)
---            )
---        ->  Else
---LEnd        <-  ({ENDIF} Ed^MISS_NL)?
---
---ALoop       <-  (
---                LOOP -> LoopStart Nl^MISS_NL
---                    {|Actions|}
---                ({ENDLOOP} Ed^MISS_NL)?
---            )
---        ->  Loop
---
+Jass        <-  {| (Nl / Chunk)* |} Sp        
+
+Chunk       <-  (   Type
+                /   Globals
+                /   Native
+                /   Function
+                -- 错误收集
+                /   Action %{ERROR_ACTION_IN_CHUNK}
+                )
+            ->  Chunk
+
+
+Function    <-  FDef -> FunctionStart Nl^MISS_NL
+                (
+                    FLocals
+                    {|Actions|}
+                ) -> FunctionBody
+                FEnd -> FunctionEnd
+FDef        <-  {CONSTANT?} FUNCTION (Name FTakes FReturns)^SYNTAX_ERROR
+FTakes      <-  TAKES^SYNTAX_ERROR 
+                (
+                    NOTHING -> Nil
+                /   {|NArg (COMMA NArg)*|} -> FArgs
+                /   Sp %{SYNTAX_ERROR}
+                )
+FArg        <-  Name Name
+FReturns    <-  RETURNS^SYNTAX_ERROR Name
+FLocals     <-  {|Locals|} / {} -> Nil
+FEnd        <-  (ENDFUNCTION Ed^MISS_NL)?
+
+
+
+Native      <-  (
+                    {} -> Point
+                    {CONSTANT?} NATIVE Name NTakes NReturns
+                )
+            ->  Native
+NTakes      <-  TAKES
+                (
+                    NOTHING -> Nil
+                /   {|NArg (COMMA NArg)*|} -> NArgs
+                )
+NArg        <-  Name Name
+NReturns    <-  RETURNS^SYNTAX_ERROR Name
+
+
+AError      <-  LOCAL Ignore
+            ->  localInFunction
+            /   TYPE Ignore
+            ->  typeInFunction
+
+            Action      <-  (
+                {} -> Point
+                (ACall / ASet / AReturn / AExit / ALogic / ALoop / AError)
+            )
+        ->  Action
+
+        
+Actions     <-  (Nl / Action)*
+
+-- Are you kidding me Blizzard?
+ACall       <-  (DEBUG? CALL Name^SYNTAX_ERROR PL ACallArgs? PR^ERROR_MISS_PR)
+        ->  ACall
+ACallArgs   <-  Exp (COMMA Exp)*
+
+ASet        <-  (SET Name^SYNTAX_ERROR (BL Exp^ERROR_MISS_EXP BR^ERROR_MISS_BR)? ASSIGN^SYNTAX_ERROR Exp^ERROR_MISS_EXP)
+        ->  Set
+
+AReturn     <-  RETURN (ARExp Ed / Sp %{SYNTAX_ERROR})
+ARExp       <-  Ed  -> Return
+        /   Exp -> ReturnExp Ed
+
+AExit       <-  EXITWHEN Exp
+        ->  Exit
+
+ALogic      <-  ({|
+                LIf
+                LElseif*
+                LElse?
+            |}
+            LEnd)
+        ->  Logic
+LIf         <-  (
+                {} -> IfStart
+                IF (Exp THEN)^ERROR_MISS_THEN Nl^MISS_NL
+                    (Actions)
+            )
+        ->  If
+LElseif     <-  (
+                {} -> ElseifStart
+                ELSEIF (Exp THEN)^ERROR_MISS_THEN Nl^MISS_NL
+                    (Actions)
+            )
+        ->  Elseif
+LElse       <-  (
+                {} -> ElseStart
+                ELSE Nl^MISS_NL
+                    (Actions)
+            )
+        ->  Else
+LEnd        <-  ({ENDIF} Ed^MISS_NL)?
+
+ALoop       <-  (
+                LOOP -> LoopStart Nl^MISS_NL
+                    {|Actions|}
+                ({ENDLOOP} Ed^MISS_NL)?
+            )
+        ->  Loop
+
 
 Globals     <-  GLOBALS -> GlobalsStart Nl^MISS_NL
                     {| (Nl / Global)* |} -> Globals

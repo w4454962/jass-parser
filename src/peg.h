@@ -12,7 +12,7 @@ local parser
 local defs = setmetatable({}, {__index = function (self, key)
     self[key] = function (...)
         if parser[key] then
-            print(key, ...)
+            print(key,select("#", ...), ...)
             return parser[key](...)
         end
     end
@@ -61,6 +61,7 @@ return function (peg_script)
                 return nil, err
             end
         end
+
         return r
     end 
 end 

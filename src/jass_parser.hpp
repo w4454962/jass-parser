@@ -66,15 +66,14 @@ enum class ValueType {
 };
 
 
-
+typedef std::function<bool(NodePtr node, int branch_index)> NodeFilter;
 
 struct Node {
 	string_t type = "none";
 
-	virtual const string_t get_type (){ 
-		return type;
-	}
-
+	virtual const string_t get_type (){  return type; }
+	virtual void each_childs(const NodeFilter& filter) { }
+	virtual size_t get_childs_size() { return 0; }
 };
 
 
@@ -248,7 +247,8 @@ struct ExpCall : ExpNode {
 	}
 };
 
-typedef std::function<bool(ActionPtr node, int branch_index)> ActionFilter;
+
+
 
 struct ActionNode :Node {
 	bool has_return;
@@ -258,7 +258,6 @@ struct ActionNode :Node {
 		has_return = false;
 	}
 
-	virtual void each_childs(ActionFilter filter, int owner_branch_index = 0) { }
 };
 
 struct ActionSet : ActionNode {
@@ -311,27 +310,78 @@ struct ActionExit : ActionNode {
 };
 
 struct IfNode : ActionNode {
-	int branch_index;
+	enum class TYPE : size_t
+	{
+		IF,
+		ELSEIF,
+		ELSE
+	};
+
+	string_t file;
+	size_t line;
+	TYPE iftype;
 	ExpPtr condition;
 	std::vector<ActionPtr> actions;
 
-	IfNode(int brach_index_) 
-		:branch_index(brach_index_)
+	IfNode(TYPE iftype_, const string_t& file_, size_t line_)
+		:iftype(iftype_),
+		file(file_),
+		line(line_)
 	{
 		type = "if";
 	}
 };
 
 struct ActionIf : ActionNode {
-	std::shared_ptr<IfNode> if_node;
-	std::vector<std::shared_ptr<IfNode>> elseif_node;
-	std::vector<ActionPtr> else_node;
+	std::vector<std::shared_ptr<IfNode>> if_nodes;
 
 	ActionIf() {
 		type = "action_if";
 	}
 
+	virtual void each_childs(const NodeFilter& filter) override {
+		for (auto& node : if_nodes) {
+			size_t brnch_index = (size_t)node->iftype;
+			for (auto& action : node->actions) {
+				if (filter(action, brnch_index))  return;
+			}
+		}
+	}
+
+	virtual size_t get_childs_size() override {
+		size_t size = 0;
+
+		for (auto& node : if_nodes) {
+			size += node->actions.size();
+		}
+		return size; 
+	}
 };
+
+struct ActionLoop :ActionNode {
+	std::vector<ActionPtr> actions;
+
+	size_t endline;
+
+	ActionLoop(size_t endline_)
+		:endline(endline_)
+	{
+		type = "action_loop";
+	}
+
+	virtual void each_childs(const NodeFilter& filter) override {
+		size_t brnch_index = 0;
+		for (auto& action : actions) {
+			if (filter(action, brnch_index))  return;
+		}
+	}
+
+	virtual size_t get_childs_size() override {
+		return actions.size();
+	}
+};
+
+
 
 struct TypeNode : Node {
 	string_t file;
@@ -402,23 +452,94 @@ struct GlobalsNode : Node {
 		type = "globals";
 		globals = nullptr;
 	}
+
+	virtual void each_childs(const NodeFilter& filter) override {
+		if (!globals) return;
+
+		size_t brnch_index = 0;
+		for (auto& global : globals->list) {
+			if (filter(global, brnch_index))  return;
+		}
+	}
+
+	virtual size_t get_childs_size() override {
+		if (!globals) return 0;
+		return globals->list.size();
+	}
 };
 
-struct FunctionNode : Node {
+
+struct NativeNode : Node {
 	string_t file;
 	size_t line;
-	string_t vtype; //return type
 	bool is_const;
 	string_t name;
 	string_t returns;
 	Container<ArgNode> args;
 
+	NativeNode(bool is_const_, const string_t& name_, const string_t& returns_, const string_t& file_, size_t line_)
+		: is_const(is_const_),
+		name(name_),
+		returns(returns_),
+		file(file),
+		line(line_)
+	{
+		type = "native";
+	}
+};
+
+struct FunctionNode : NativeNode {
 	Container<LocalNode> locals;
 
 	std::vector<ActionPtr> actions;
 
-	FunctionNode() {
+	FunctionNode(bool is_const_, const string_t& name_, const string_t& returns_, const string_t& file_, size_t line_)
+		: NativeNode(is_const_, name_, returns_, file_, line_)
+	{
 		type = "function";
+	}
+
+	virtual void each_childs(const NodeFilter& filter) override {
+		size_t brnch_index = 0;
+		for (auto& local : locals.list) {
+			if (filter(local, brnch_index))  return;
+		}
+
+		for (auto& action : actions) {
+			if (filter(action, brnch_index))  return;
+		}
+	}
+
+	virtual size_t get_childs_size() override {
+		return locals.list.size() + actions.size();
+	}
+};
+
+struct Jass : Node {
+	string_t file;
+
+	Container<TypeNode> types;
+	Container<GlobalNode> globals;
+	Container<NativeNode> natives;
+	Container<FunctionNode> functions;
+
+	Jass(const string_t& file_)
+		:file(file_)
+	{
+		type = "jass";
+
+		//基础数据类型
+		auto base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing" };
+		for (auto name : base_list) {
+			auto obj = std::make_shared<TypeNode>(name, nullptr, "<init>", 0);
+			types.save(name, obj);
+			if (name == "code" || name == "string" || name == "handle") { //这些类型可以使用null
+				obj->childs.emplace("null");
+			}
+			else if (name == "real") { // real类型 可以使用integer
+				obj->childs.emplace("integer");
+			}
+		}
 	}
 };
 
@@ -458,29 +579,17 @@ struct ParseLog {
 	}
 };
 
+
+
 struct ParseResult {
 	
-	Container<TypeNode> types;
-	Container<GlobalNode> globals;
-	Container<FunctionNode> functions;
+
+	std::shared_ptr<Jass> jass;
 	
 	std::unordered_map<size_t, string_t> comments;
 
 	ParseLog log;
 
-	ParseResult() {
-		//基础数据类型
-		auto base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing" };
-		for (auto name : base_list) {
-			auto obj = std::make_shared<TypeNode>(name, nullptr, "<init>", 0);
-			types.save(name, obj);
-			if (name == "code" || name == "string" || name == "handle") { //这些类型可以使用null
-				obj->childs.emplace("null");
-			} else if (name == "real") { // real类型 可以使用integer
-				obj->childs.emplace("integer");
-			}
-		}
-	}
 };
 
 
@@ -509,10 +618,13 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	string_t file = "war3map.j";
 
+	result.jass = std::make_shared<Jass>(file);
+
 	auto& comments = result.comments;
-	auto& functions = result.functions;
-	auto& types = result.types;
-	auto& globals = result.globals;
+	auto& functions = result.jass->functions;
+	auto& types = result.jass->types;
+	auto& globals = result.jass->globals;
+	auto& natives = result.jass->natives;
 	auto& log = result.log;
 
 	auto position = [&]() {
@@ -552,6 +664,12 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		if (func) {
 			log.error(position(), "ERROR_REDEFINE_FUNCTION", name, func->file, func->line);
 		}
+
+		auto native = natives.find(name);
+		if (native) {
+			log.error(position(), "ERROR_REDEFINE_FUNCTION", name, native->file, native->line);
+		}
+		
 	};
 
 	auto check_new_name = [&](const string_t& name) {
@@ -583,15 +701,20 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	auto get_function = [&](const string_t& name) {
 		check_name(name);
 
-		auto func = functions.find(name);
+		std::shared_ptr<NativeNode> func;
+		
+		func = natives.find(name);
 		if (!func) {
-			log.error(position(), "FUNCTION_NO_EXISTS", name);
+			func = functions.find(name);
+			if (!func) {
+				log.error(position(), "FUNCTION_NO_EXISTS", name);
+			}
 		}
 		return func;
 	};
 
 
-	auto check_call = [&](const std::shared_ptr<FunctionNode>& func, const std::shared_ptr<ExpCall>& call) {
+	auto check_call = [&](const std::shared_ptr<NativeNode>& func, const std::shared_ptr<ExpCall>& call) {
 		if (func->name.empty()) {
 			return;
 		}
@@ -931,7 +1054,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	};
 
 	parser["ACall"] = [&](const string_t& name, sol::variadic_args args) {
-		auto func = functions.find(name);
+		auto func = get_function(name);
 		auto current = functions.back();
 		if (!func || !current || current->is_const != func->is_const) {
 			log.error(position(), "ERROR_CALL_IN_CONSTANT", name);
@@ -1139,7 +1262,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			global->is_array = is_array;
 		}
 		
-		return (NodePtr)local;
+		//return (NodePtr)local;
 	};
 
 
@@ -1246,8 +1369,8 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		auto func = functions.back();
 	
 		if (func && exp) {
-			auto& t1 = func->vtype;
-			auto& t2 = func->vtype;
+			auto& t1 = func->returns;
+			auto& t2 = func->returns;
 	
 			if (t1 != "nothing") {
 				if (t1 == "Real" && t2 == "integer") {
@@ -1277,11 +1400,253 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		return (NodePtr)exit;
 	};
 
-	parser["Logic"] = [&](NodePtr chunks, const string_t& endif) {
+	parser["Logic"] = [&](sol::lua_table ifelse, const string_t& endif) {
 		if (endif.empty()) {
+			auto if_node = CastNode<IfNode>(ifelse[0]);
+			log.error(position(), "ERROR_ENDIF", if_node->file, if_node->line);
+		}
 
+		auto action_if = std::make_shared<ActionIf>();
+
+		action_if->if_nodes.resize(ifelse.size());
+
+		bool has_return = true;
+		for (size_t i = 0; i < ifelse.size(); i++) {  //三个分支必须都要有返回值
+			auto node = CastNode<IfNode>(ifelse[i]);
+			action_if->if_nodes[i] = node;
+			if (!node->has_return) {
+				has_return = false;
+			}
+		}
+		action_if->has_return = has_return;
+
+		return (NodePtr)action_if;
+	};
+
+
+	parser["IfStart"] = [&]() {
+		sol::variadic_results res;
+
+		res.push_back(sol::make_object(lua, file));
+		res.push_back(sol::make_object(lua, linecount));
+
+		return res;
+	};
+
+	parser["If"] = [&](const string_t& file, size_t line, NodePtr condition, sol::variadic_args args) {
+		auto exp = CastNode<ExpNode>(condition);
+		if (exp->vtype != "boolean") {
+			log.warning(position(), "ERROR_CONDITION_TYPE");
+		}
+
+		auto if_node = std::make_shared<IfNode>(IfNode::TYPE::IF, file, line);
+		if_node->condition = exp;
+		if_node->actions.resize(args.size());
+		size_t i = 0;
+		for (auto v : args) {
+			auto action = CastNode<ActionNode>(v);
+			if_node->actions[i++] = action;
+
+			if (action->has_return) {
+				if_node->has_return = true;
+			}
+		}
+
+		return (NodePtr)if_node;
+	};
+
+
+	parser["ElseifStart"] = parser["IfStart"];
+
+
+	parser["Elseif"] = [&](const string_t& file, size_t line, NodePtr condition, sol::variadic_args args) {
+		auto exp = CastNode<ExpNode>(condition);
+		if (exp->vtype != "boolean") {
+			log.error(position(), "ERROR_CONDITION_TYPE");
+		}
+
+		auto elseif_node = std::make_shared<IfNode>(IfNode::TYPE::ELSEIF, file, line);
+		elseif_node->condition = exp;
+		elseif_node->actions.resize(args.size());
+		size_t i = 0;
+		for (auto v : args) {
+			auto action = CastNode<ActionNode>(v);
+			elseif_node->actions[i++] = action;
+			if (action->has_return) {
+				elseif_node->has_return = true;
+			}
+		}
+
+		return (NodePtr)elseif_node;
+	};
+
+	parser["ElseStart"] = parser["IfStart"];
+
+	parser["Else"] = [&](const string_t& file, size_t line, sol::variadic_args args) {
+		auto else_node = std::make_shared<IfNode>(IfNode::TYPE::ELSE, file, line);
+		else_node->actions.resize(args.size());
+		size_t i = 0;
+		for (auto v : args) {
+			auto action = CastNode<ActionNode>(v);
+			else_node->actions[i++] = action;
+			if (action->has_return) {
+				else_node->has_return = true;
+			}
+		}
+		return (NodePtr)else_node;
+	};
+
+	parser["LoopStart"] = [&]() {
+		loop_stack_count++;
+		return linecount;
+	};
+
+	parser["Loop"] = [&](size_t line, sol::lua_table chunks, const string_t& endloop) {
+		if (endloop.empty()) {
+			log.error(position(), "ERROR_ENDLOOP", line);
+		}
+		loop_stack_count--;
+
+		auto loop = std::make_shared<ActionLoop>(linecount);
+
+		loop->actions.resize(chunks.size());
+
+		for (size_t i = 0; i < chunks.size(); i++) {
+			loop->actions[i] = CastNode<ActionNode>(chunks[i]);
+		}
+		return (NodePtr)loop;
+	};
+
+	
+	parser["NArgs"] = [&](sol::lua_table takes) {
+		printf("bbbbbbbbbbb\n");
+		return takes;
+	};
+
+	parser["FArgs"] = [&](sol::lua_table takes) {
+
+		printf("cccccccccccccc\n");
+		return takes;
+	};
+
+	parser["Native"] = [&](
+		const string_t& file,
+		size_t line, 
+		const string_t& constant,
+		const string_t& name,
+		sol::lua_table takes,
+		const string_t& returns
+	) {
+		printf("aaaaaaaaaaaaa\m");
+		check_name(name);
+		check_new_name(name);
+		check_type(returns);
+
+		bool is_const = !constant.empty();
+
+		auto native = std::make_shared<NativeNode>(is_const, name, returns, file, line);
+
+		for (size_t i = 0; i < takes.size(); i += 2) {
+			const string_t& type = takes[i];
+			const string_t& name = takes[i + 1];
+
+			auto arg = std::make_shared<ArgNode>(type, name);
+
+			auto var = globals.find(name);
+			if (var) {
+				log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+			}
+			if (!types.find(type)) {
+				log.error(position(), "ERROR_UNDEFINE_TYPE", type);
+			}
+			native->args.save(name, arg);
+		}
+
+		natives.save(name, native);
+
+		return (NodePtr)native;
+	};
+
+	parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, sol::lua_table takes, const string_t& returns) {
+		check_name(name);
+		check_new_name(name);
+		check_type(returns);
+
+		bool is_const = !constant.empty();
+
+		auto func = std::make_shared<FunctionNode>(is_const, name, returns, file, linecount);
+
+		for (size_t i = 0; i < takes.size(); i += 2) {
+			const string_t& type = takes[i];
+			const string_t& name = takes[i + 1];
+
+			auto arg = std::make_shared<ArgNode>(type, name);
+
+			auto var = globals.find(name);
+			if (var) {
+				log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+			}
+			if (!types.find(type)) {
+				log.error(position(), "ERROR_UNDEFINE_TYPE", type);
+			}
+			func->args.save(name, arg);
+		}
+
+		functions.save(name, func);
+
+		return (NodePtr)func;
+	};
+
+	parser["FunctionBody"] = [&](sol::lua_table locals, sol::lua_table actions) {
+		auto func = functions.back();
+
+		func->actions.resize(actions.size());
+
+		for (size_t i = 0; i < actions.size(); i++) {
+			func->actions[i] = CastNode<ActionNode>(actions[i]);
 		}
 	};
+
+	parser["FunctionEnd"] = [&](const string_t& endfunction) {
+		auto func = functions.back();
+
+		if (endfunction.empty()) {
+			log.error(position(), "ERROR_ENDFUNCTION", func->line);
+		}
+		return (NodePtr)func;
+	};
+
+
+	parser["Chunk"] = [](NodePtr chunk) {
+		return chunk;
+	};
+
+
+	parser["returnAsReturns"] = [&]() {
+		log.error(position(), "ERROR_RETURN_AS_RETURNS");
+	};
+
+	parser["setAsCall"] = [&]() {
+		log.error(position(), "ERROR_SET_AS_CALL");
+	};
+
+	parser["callAsSet"] = [&]() {
+		log.error(position(), "ERROR_CALL_AS_SET");
+	};
+
+	parser["constantLocal"] = [&]() {
+		log.error(position(), "ERROR_CONSTANT_LOCAL");
+	};
+
+	parser["typeInFunction"] = [&]() {
+		log.error(position(), "ERROR_TYPE_IN_FUNCTION");
+	};
+
+	parser["localInFunction"] = [&]() {
+		log.error(position(), "ERROR_LOCAL_IN_FUNCTION");
+	};
+
+
 
 	parser["errorpos"] = [](int line, int col, string_t at_line, string_t err) {
 		std::string msg = std::format("error:{}:{}:   {}:\n{}\n", line, col, err, at_line);
@@ -1290,7 +1655,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	//peg_parser(script, parser);
 
-	NodePtr res = (peg_parser(script, parser));
-	std::cout << res->type << std::endl;
+	peg_parser(script, parser);
+	//std::cout << res->type << std::endl;
 	return;
 }
