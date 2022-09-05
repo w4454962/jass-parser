@@ -47,10 +47,12 @@ void init_config() {
 		std::smatch result;
 		if (std::regex_match(line, result, std::regex("^\\[(.+)\\]$"))) {
 			key = result[1];
-		}
-		else if (!key.empty()) {
+		} else if (!key.empty()) {
 			std::string& old = jass_error_map[key];
-			old += "\n" + line;
+			if (!old.empty() || line.empty()) {
+				old += "\n";
+			}
+			old += line;
 		}
 	}
 
@@ -63,9 +65,9 @@ void init_config() {
 		v = std::regex_replace(v, std::regex("%s"), "{}");
 	}
 
-	for (auto&& [k, v] : jass_error_map) {
-		//std::cout << k << ":" << v << std::endl;
-	}
+	//for (auto&& [k, v] : jass_error_map) {
+	//	std::cout << k << ":" << v << std::endl;
+	//}
 }
 
 //void test(sol::state& lua, sol::table& parser) {
@@ -109,22 +111,50 @@ int main(int argn, char** argv) {
 
 	std::string script = R"(
 
+type agent			    extends     handle
+
+type ttt extends integer
+
+native test0 takes nothing returns nothing 
+
+native test1 takes integer a returns integer 
+
+native test2 takes integer a, integer b returns integer 
+
+constant native test3 takes integer a returns ttt
+ 
+
 globals 
 	integer a = 1 + 2 * 3 / 4
 	string b = "hello"
 	boolean c 
 endglobals
 
-native test takes nothing returns nothing 
+function code1 takes nothing returns nothing 
+	local integer num = test1(1)
+	local integer array num2  
+	local integer num3 = ((1 + 3) * 4) / 5 + 1
 
-native test2 takes integer a, integer b returns integer 
+	set num = test1(1) + 20 * 30 + test1(1) + num * test1(num)
 
+	set num2[1+1] = num + num2[num+num2[test1(1)]]
+
+
+endfunction
+
+function code2 takes nothing returns nothing 
+	
+endfunction
 
 )";
 	ParseResult result;
 	jass_parser(lua, script, result);
 	
-
+	
+	for (auto& v : result.log.errors) {
+		std::cout << "[error]:" << v->file << ":" << v->line << ": " << v->message << "\n" << v->at_line << std::endl;
+	}
+	
 	lua.script("print('finish')");
 
 

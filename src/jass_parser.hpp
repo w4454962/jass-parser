@@ -171,7 +171,7 @@ struct ExpVar :ExpNode {
 		:var(var_)
 	{
 		type = "exp_var";
-		vtype = var->type;
+		vtype = var->vtype;
 	}
 };
 
@@ -185,7 +185,7 @@ struct ExpVari : ExpNode {
 		index(index_)
 	{
 		type = "exp_vari";
-		vtype = var->type;
+		vtype = var->vtype;
 	}
 };
 
@@ -422,7 +422,7 @@ struct LocalNode : VarBaseNode {
 	ExpPtr exp;
 
 	LocalNode(const string_t& type_, const string_t& name_, bool is_array_, const string_t& file_, size_t line_)
-		: is_array(is_array),
+		: is_array(is_array_),
 		file(file_),
 		line(line_)
 	{
@@ -556,6 +556,7 @@ struct ParseErrorMessage
 	string_t message;
 	size_t line;
 	size_t column;
+	string_t at_line;
 };
 
 
@@ -565,15 +566,15 @@ struct ParseLog {
 	std::vector<MsgPtr> warnings;
 
 	template<typename... Args>
-	void error(MsgPtr msg, const std::string_view& fmt, Args... args) {
-		msg->message = std::vformat(fmt, _STD make_format_args(args...));
+	void error(MsgPtr msg, const std::string& fmt, Args... args) {
+		msg->message = fmt + ":" + std::vformat(convert_message(fmt), _STD make_format_args(args...));
 		msg->level = ErrorLevel::error;
 		errors.push_back(msg);
 	}
 
 	template<typename... Args>
 	void warning(MsgPtr msg, const std::string_view& fmt, Args... args) {
-		msg->message = std::vformat(fmt, _STD make_format_args(args...));
+		msg->message = std::vformat(convert_message(fmt), _STD make_format_args(args...));
 		msg->level = ErrorLevel::warning;
 		warnings.push_back(msg);
 	}
@@ -609,6 +610,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	lua_State* L = lua.lua_state();
 
 	sol::function make_peg = lua.require_file("peg", "peg");
+	sol::table relabel = lua.require_file("relabel", "relabel");
 
 	sol::function peg_parser = make_peg(jass_peg_rule);
 
@@ -631,9 +633,23 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		auto msg = std::make_shared<ParseErrorMessage>();
 		msg->file = file;
 		msg->line = linecount;
-		msg->column = 0;
+		msg->column = -1;
+		msg->at_line = relabel["line"](script, linecount + 1);
+
 		return msg;
 	};
+
+	parser["errorpos"] = [&](int line, int col, string_t at_line, string_t err) {
+
+		auto msg = std::make_shared<ParseErrorMessage>();
+		msg->file = file;
+		msg->line = line;
+		msg->column = col;
+		msg->at_line = at_line;
+
+		log.error(msg, err);
+	};
+
 
 	auto check_name = [&](const string_t& name) {
 		if (keywords.find(name) != keywords.end()) {
@@ -730,7 +746,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 						auto& arg = func->args.list[i];
 						if (!miss.empty())
 							miss += ",";
-						miss += std::format("{} {}", arg->type, arg->name);
+						miss += std::format("{} {}", arg->vtype, arg->name);
 					}
 					log.error(position(), "ERROR_LESS_ARGS", func->name, args_count, params_count, miss);
 				}
@@ -770,11 +786,18 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 				return (VarPtr)arg;
 			}
 		}
-		return (VarPtr)globals.find(name);
+
+		auto global = globals.find(name);
+		if (global) {
+			return (VarPtr)global;
+		}
+		log.error(position(), "VAR_NO_EXISTS", name);
+
+		return VarPtr();
 	};
 
 
-	auto check_set = [&](VarPtr var, bool need_array, ExpPtr index, ExpPtr exp) {
+	auto check_set = [&](VarPtr& var, bool need_array, ExpPtr index, ExpPtr exp) {
 		if (!var) return;
 		auto& name = var->name;
 
@@ -797,12 +820,12 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			log.error(position(), "ERROR_SET_CONSTANT", name);
 		}
 
-		if (exp && is_extends(exp->vtype, var->vtype)) {
-			log.error(position(), "ERROR_SET_TYPE", name, var->type, exp->vtype);
+		if (exp && !is_extends(exp->vtype, var->vtype)) {
+			log.error(position(), "ERROR_SET_TYPE", name, var->vtype, exp->vtype);
 		}
 	};
 
-	auto check_get = [&](VarPtr var, bool need_array) {
+	auto check_get = [&](VarPtr& var, bool need_array) {
 		if (!var) return;
 
 		auto& name = var->name;
@@ -1079,6 +1102,9 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		check_get(var, true);
 
+		if (!var) {
+			return NodePtr();
+		}
 		auto index_exp = CastNode<ExpNode>(index);
 		auto exp_vari = std::make_shared<ExpVari>(var, index_exp);
 
@@ -1088,8 +1114,11 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	parser["Var"] = [&](const string_t& name) {
 		auto var = get_variable(name);
+		
 		check_get(var, false);
-
+		if (!var) {
+			return NodePtr();
+		}
 		auto exp_var = std::make_shared<ExpVar>(var);
 
 		return (NodePtr)exp_var;
@@ -1149,7 +1178,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		types.save(name, type);
 
-		return type;
+		return (NodePtr)type;
 	};
 
 	size_t globals_start_line = 0;
@@ -1252,26 +1281,29 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		auto local = std::make_shared<LocalNode>(type, name, is_array, file, linecount);
 
-		auto func = functions.back();
-
-		func->locals.save(name, local);
-		
+	
 		auto global = globals.find(name);
 		if (global) { //如果局部变量与全局变量同名 可以影响全局变量
 			global->vtype = type;
 			global->is_array = is_array;
 		}
 		
-		//return (NodePtr)local;
+		return (NodePtr)local;
 	};
 
 
 	
 
-	parser["Local"] = [&](NodePtr loc, NodePtr init_exp){
+	parser["Local"] = [&](sol::object loc, sol::object exp_){
 
-		auto local = CastNode<LocalNode>(loc);
-		auto exp = CastNode<ExpNode>(init_exp);
+		printf("type %i   %i\n", loc.get_type(), exp_.get_type());
+
+		auto local = CastNode<LocalNode>(loc.as<NodePtr>());
+		ExpPtr exp;
+
+		if (exp_.get_type() == sol::type::userdata) {
+			exp = CastNode<ExpNode>(exp_.as<NodePtr>());
+		}
 
 		if (local && exp) {
 			local->has_set = true;
@@ -1288,12 +1320,20 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 			auto func = functions.back();
 			
 			if (func && exp->type == "exp_call") { // 局部变量的初始值不能递归自己
-				auto call = CastNode<ExpCall>(init_exp);
+				auto call = CastNode<ExpCall>(exp);
 				if (func->name == call->name) {
 					log.error(position(), "ERROR_LOCAL_RECURSION");
 				}
 			}
 		}
+
+		if (local) {
+			auto func = functions.back();
+
+			func->locals.save(local->name, local);
+		}
+		
+
 		return loc;
 	};
 
@@ -1316,6 +1356,9 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 	parser["ECall"] = [&](const string_t& name, sol::variadic_args args) {
 		auto func = get_function(name);
 
+		if (!func) {
+			return NodePtr();
+		}
 		auto call = std::make_shared<ExpCall>(func->name, func->returns);
 
 		for (auto v : args) {
@@ -1329,6 +1372,11 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 	parser["Set"] = [&](const string_t& name, sol::variadic_args args) {
 		auto var = get_variable(name);
+
+		if (!var) {
+			return NodePtr();
+		}
+
 		if (args.size() == 1) {
 			auto exp = CastNode<ExpNode>(args[0]);
 			check_set(var, false, nullptr, exp);
@@ -1412,7 +1460,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		bool has_return = true;
 		for (size_t i = 0; i < ifelse.size(); i++) {  //三个分支必须都要有返回值
-			auto node = CastNode<IfNode>(ifelse[i]);
+			auto node = CastNode<IfNode>(ifelse[i + 1]);
 			action_if->if_nodes[i] = node;
 			if (!node->has_return) {
 				has_return = false;
@@ -1512,20 +1560,17 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		loop->actions.resize(chunks.size());
 
 		for (size_t i = 0; i < chunks.size(); i++) {
-			loop->actions[i] = CastNode<ActionNode>(chunks[i]);
+			loop->actions[i] = CastNode<ActionNode>(chunks[i + 1]);
 		}
 		return (NodePtr)loop;
 	};
 
 	
 	parser["NArgs"] = [&](sol::object takes) {
-		printf("bbbbbbbbbbb\n");
 		return takes;
 	};
 
 	parser["FArgs"] = [&](sol::object takes) {
-
-		printf("cccccccccccccc\n");
 		return takes;
 	};
 
@@ -1537,7 +1582,6 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		sol::object takes_,
 		const string_t& returns
 	) {
-		printf("aaaaaaaaaaaaa\m");
 		check_name(name);
 		check_new_name(name);
 		check_type(returns);
@@ -1546,18 +1590,15 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		auto native = std::make_shared<NativeNode>(is_const, name, returns, file, line);
 
+
 		if (takes_.get_type() == sol::type::table) {
+			
 			sol::lua_table takes = takes_.as<sol::lua_table>();
 
-			printf("size %i\n", takes.size());
-			
-			for (size_t i = 0; i < takes.size(); i++) {
-				printf("%i  %i\n", i, takes[i].get_type());
-			}
 
 ;			for (size_t i = 0; i < takes.size(); i += 2) {
-				const string_t type = takes[i].get<string_t>();
-				const string_t name = takes[i + 1].get<string_t>();
+				const string_t type = takes[i + 1];
+				const string_t name = takes[i + 2];
 
 				auto arg = std::make_shared<ArgNode>(type, name);
 
@@ -1578,16 +1619,9 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 		return (NodePtr)native;
 	};
 
-	//parser["Native"] = [&](sol::variadic_args args) {
-	//
-	//
-	//	printf("xxxxxxxx  %x\n", args.size());
-	//	for (auto v : args) {
-	//		printf("%i\n", v.get_type());
-	//	}
-	//};
 
-	parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, sol::lua_table takes, const string_t& returns) {
+
+	parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, sol::object takes_, const string_t& returns) {
 		check_name(name);
 		check_new_name(name);
 		check_type(returns);
@@ -1596,34 +1630,38 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 		auto func = std::make_shared<FunctionNode>(is_const, name, returns, file, linecount);
 
-		for (size_t i = 0; i < takes.size(); i += 2) {
-			const string_t& type = takes[i];
-			const string_t& name = takes[i + 1];
+		if (takes_.get_type() == sol::type::table) {
+			auto takes = takes_.as<sol::lua_table>();
+			for (size_t i = 0; i < takes.size(); i += 2) {
+				const string_t& type = takes[i + 1];
+				const string_t& name = takes[i + 2];
 
-			auto arg = std::make_shared<ArgNode>(type, name);
+				auto arg = std::make_shared<ArgNode>(type, name);
 
-			auto var = globals.find(name);
-			if (var) {
-				log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+				auto var = globals.find(name);
+				if (var) {
+					log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+				}
+				if (!types.find(type)) {
+					log.error(position(), "ERROR_UNDEFINE_TYPE", type);
+				}
+				func->args.save(name, arg);
 			}
-			if (!types.find(type)) {
-				log.error(position(), "ERROR_UNDEFINE_TYPE", type);
-			}
-			func->args.save(name, arg);
 		}
+		
 
 		functions.save(name, func);
 
 		return (NodePtr)func;
 	};
 
-	parser["FunctionBody"] = [&](sol::lua_table locals, sol::lua_table actions) {
+	parser["FunctionBody"] = [&](sol::object locals, sol::lua_table actions) {
 		auto func = functions.back();
 
 		func->actions.resize(actions.size());
 
 		for (size_t i = 0; i < actions.size(); i++) {
-			func->actions[i] = CastNode<ActionNode>(actions[i]);
+			func->actions[i] = CastNode<ActionNode>(actions[i + 1]);
 		}
 	};
 
@@ -1668,10 +1706,7 @@ void jass_parser(sol::state& lua, const string_t& script, ParseResult& result) {
 
 
 
-	parser["errorpos"] = [](int line, int col, string_t at_line, string_t err) {
-		std::string msg = std::format("error:{}:{}:   {}:\n{}\n", line, col, err, at_line);
-		printf(msg.c_str());
-	};
+	
 
 	//peg_parser(script, parser);
 
