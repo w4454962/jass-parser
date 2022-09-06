@@ -2,8 +2,9 @@
 
 static const char jass_peg_rule[] = R"(
 
-Jass        <-  {| (Nl / Chunk)* |} Sp        
-
+Jass        <-  {| (Nl / Chunk)* |} ->Jass
+                 Sp        
+                
 Chunk       <-  (   Type
                 /   Globals
                 /   Native
@@ -20,6 +21,7 @@ Function    <-  FDef -> FunctionStart Nl^MISS_NL
                     {|Actions|}
                 ) -> FunctionBody
                 FEnd -> FunctionEnd
+
 FDef        <-  {CONSTANT?} FUNCTION (Name FTakes FReturns)^SYNTAX_ERROR
 FTakes      <-  TAKES^SYNTAX_ERROR 
                 (
@@ -48,19 +50,15 @@ NArg        <-  Name Name
 NReturns    <-  RETURNS^SYNTAX_ERROR Name
 
 
-AError      <-  LOCAL Ignore
-            ->  localInFunction
-            /   TYPE Ignore
-            ->  typeInFunction
 
-            Action      <-  (
+Actions     <-  (Nl / Action)*
+
+Action      <-  (
                 {} -> Point
                 (ACall / ASet / AReturn / AExit / ALogic / ALoop / AError)
             )
         ->  Action
 
-        
-Actions     <-  (Nl / Action)*
 
 -- Are you kidding me Blizzard?
 ACall       <-  (DEBUG? CALL Name^SYNTAX_ERROR PL ACallArgs? PR^ERROR_MISS_PR)
@@ -110,6 +108,11 @@ ALoop       <-  (
                 ({ENDLOOP} Ed^MISS_NL)?
             )
         ->  Loop
+
+AError      <-  LOCAL Ignore
+            ->  localInFunction
+            /   TYPE Ignore
+            ->  typeInFunction
 
 
 Globals     <-  GLOBALS -> GlobalsStart Nl^MISS_NL
