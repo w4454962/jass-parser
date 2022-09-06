@@ -590,6 +590,7 @@ struct ParseLog {
 			msg->message = /*fmt + ":" + */std::vformat(convert_message(fmt), std::make_format_args(args...));
 			msg->level = ErrorLevel::error;
 			errors.push_back(msg);
+			printf("%s\n", msg->message.c_str());
 		} catch(...) {
 			printf("Crash %s\n", fmt.c_str());
 		}
@@ -611,6 +612,7 @@ struct ParseLog {
 		msg->message = std::vformat(convert_message(fmt), std::make_format_args(args...));
 		msg->level = ErrorLevel::warning;
 		warnings.push_back(msg);
+		printf("%s\n", msg->message.c_str());
 	}
 };
 
@@ -666,8 +668,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 	const string_t& file = config.file;
 
-	result.jass = std::make_shared<Jass>(file);
-
+	if (!result.jass) {
+		result.jass = std::make_shared<Jass>(file);
+	}
+	
 	auto& comments = result.comments;
 	auto& functions = result.jass->functions;
 	auto& types = result.jass->types;
@@ -675,6 +679,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	auto& natives = result.jass->natives;
 	auto& exploits = result.jass->exploits;
 	auto& log = result.log;
+
+	bool has_function = false; 
 
 	auto position = [&]() {
 		auto msg = std::make_shared<ParseErrorMessage>();
@@ -824,9 +830,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				for (size_t i = 0; i < args_count; i++) {
 					auto& arg = func->args.list[i];
 					auto& exp = call->params[i];
-					if (arg->vtype != exp->vtype && !is_extends(exp->vtype, arg->vtype)) {
-						auto p = position();
-						log.error(p, "ERROR_WRONG_ARG", func->name, i, arg->vtype, exp->vtype);
+					if (!is_extends(exp->vtype, arg->vtype)) {
+						log.error(position(), "ERROR_WRONG_ARG", func->name, i + 1, arg->vtype, exp->vtype);
 						if (exp->type == "exp_var") {
 							auto exp_var = CastNode<ExpVar>(exp);
 							append_expolit_warning(exp_var->var);
@@ -878,6 +883,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	auto check_set = [&](VarPtr& var, bool need_array, ExpPtr index, ExpPtr exp) {
 		if (!var) return;
 		auto& name = var->name;
+		var->has_set = true;
 
 		if (need_array) {
 			if (var->type == "var_arg" || !CastNode<LocalNode>(var)->is_array) {
@@ -896,12 +902,16 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			append_expolit_warning(var);
 		}
 
-		auto func = functions.back();
-		if (!func && var->type == "var_global" && CastNode<GlobalNode>(var)->is_const) {
-			log.error(position(), "ERROR_SET_CONSTANT", name);
-		} else if(func && func->is_const && var->type == "var_global") {
-			log.error(position(), "ERROR_SET_IN_CONSTANT", name);
+		if (has_function) {
+			auto func = functions.back();
+			if (func && var->type == "var_global" && CastNode<GlobalNode>(var)->is_const) {
+				log.error(position(), "ERROR_SET_CONSTANT", name);
+			}
+			else if (func && func->is_const && var->type == "var_global") {
+				log.error(position(), "ERROR_SET_IN_CONSTANT", name);
+			}
 		}
+	
 
 		if (exp && !is_extends(exp->vtype, var->vtype)) {
 			log.error(position(), "ERROR_SET_TYPE", name, var->vtype, exp->vtype);
@@ -925,7 +935,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				append_expolit_warning(var);
 			}
 			if (!var->has_set) {
-				log.warning(position(), "ERROR_GET_UNINIT", name);
+				//log.warning(position(), "ERROR_GET_UNINIT", name);
 				//append_expolit_warning(var);
 			}
 		}
@@ -1106,6 +1116,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 
+
 	parser["nl"] = [&]() {
 		linecount++;
 	};
@@ -1138,8 +1149,14 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return (NodePtr)std::make_shared<ExpStringValue>(str);
 	};
 	
-	parser["Real"] = [](const std::string& str) {
-		return (NodePtr)std::make_shared<ExpRealValue>(std::stof(str));
+	parser["Real"] = [](const std::string& neg, const std::string& str) {
+		float value = 0;
+		try {
+			value = std::stof(neg + str);
+		} catch(...) {
+			
+		}
+		return (NodePtr)std::make_shared<ExpRealValue>(value);
 	};
 
 	parser["Integer8"] = [&](const std::string& neg, const std::string& str) {
@@ -1186,7 +1203,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		auto func = get_function(name);
 		auto current = functions.back();
 	
-		if (!func || !current || current->is_const != func->is_const) {
+		if (!func && current && current->is_const && !func->is_const) {
 			log.error(position(), "ERROR_CALL_IN_CONSTANT", name);
 		}
 
@@ -1200,7 +1217,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		call->is_action = true;
 		
 		for (auto v : args) {
-			call->params.push_back(CastNode<ExpNode>(v));
+			if (v.get_type() != sol::type::nil) {
+				call->params.push_back(CastNode<ExpNode>(v));
+			}
+			
 		}
 	
 		if (func) {
@@ -1301,10 +1321,16 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		types.save(name, type);
 
-		if (parent) {
-			parent->childs.emplace(name);
-		}
+		if (parent) { //继承置空能力
+			if (auto it = parent->childs.find("null"); it != parent->childs.end()) {
+				type->childs.emplace("null");
+			}
 
+			while (parent) {
+				parent->childs.emplace(name);
+				parent = parent->parent;
+			}
+		}
 		return (NodePtr)type;
 	};
 
@@ -1812,7 +1838,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			}
 		}
 		
-
+		has_function = true;
 		functions.save(name, func);
 
 		return (NodePtr)func;

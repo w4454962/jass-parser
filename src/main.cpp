@@ -170,6 +170,43 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 }
 
 
+void check_script(sol::state& lua, const fs::path file, ParseResult& result) {
+	ParseConfig config;
+
+	config.file = file.filename().string();
+	
+	std::ifstream stream(file, std::ios::binary);
+
+	config.script = std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+
+	bool success = jass_parser(lua, config, result);
+
+	auto& errors = result.log.errors;
+	auto& warnings = result.log.warnings;
+
+	if (errors.size() == 0) {
+		if (!success) {
+			std::cout << file << "\t fail" << std::endl;
+		}
+		else {
+			std::cout << file << "\tpass" << std::endl;
+		}
+	}
+
+	if (errors.size() > 0) {
+		std::cout << file << "\t error" << std::endl;
+
+		for (auto v : errors) {
+			std::cout << "[error]<" << v->message << ">" << std::endl;
+		}
+	}
+
+	if (warnings.size() > 0) {
+		for (auto v : warnings) {
+			std::cout << "[warning]<" << v->message << ">" << std::endl;
+		}
+	}
+}
 
 int main(int argn, char** argv) {
 
@@ -188,12 +225,20 @@ int main(int argn, char** argv) {
 	lua.require_script("peg", peg_script, false, "peg");
 
 	//tests(lua, fs::path(argv[1]));
+	clock_t start = clock();
 
 
+	fs::path path = fs::current_path() / "war3" / "24";
 
+	ParseResult* result = new ParseResult();
 
-	lua.script("print('finish')");
+	check_script(lua, path / "common.j", *result);
+	check_script(lua, path / "blizzard.j", *result);
+	check_script(lua, path / "war3map.j", *result); 
 
+	//check_script(lua, fs::current_path() / "tests" / "aa.j", *result);
+
+	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
 	
 	return 0;
