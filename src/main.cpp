@@ -129,9 +129,8 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 		fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
 
 		if (!fs::exists(path)) {
-		//	path = std::regex_replace(src, std::regex("\\.j"), ".warn");
+			path = std::regex_replace(src, std::regex("\\.j"), ".warn");
 		}
-
 
 		if (result.log.errors.size() == 0) {
 			if (!success) {
@@ -188,134 +187,14 @@ int main(int argn, char** argv) {
 	lua.require_script("relabel", relabel_script, false, "relabel");
 	lua.require_script("peg", peg_script, false, "peg");
 
-	tests(lua, fs::path(argv[1]));
+	//tests(lua, fs::path(argv[1]));
 
-	std::string script = R"(
 
-type agent			    extends     handle
 
-type ttt extends integer
 
-native test0 takes nothing returns nothing 
-
-native test1 takes integer a returns integer 
-
-native test2 takes integer a, integer b returns integer 
-
-constant native test3 takes integer a returns ttt
- 
-
-globals 
-	integer a = 1 + 2 * 3 / 4
-	string b = "hello"
-	boolean c 
-
-	integer d = test1(a)
-
-endglobals
-
-function code1 takes nothing returns integer 
-	local integer num = test1(1)
-	local integer array num2  
-	local integer num3 = ((1 + 3) * 4) / 5 + 1
-	local boolean b = false
-	set num = test1(1) + 20 * 30 + test1(1) + num * test1(num)
-
-	set num2[1+1] = num + num2[num+num2[test1(1)]]
-
-	if num + 2 == 2 then 
-		set num = num + 1
-	endif 
-	
-	if b then
-	endif 
-	
-	if b then
-	else 
-	endif 
-	
-	if not b and true then 
-		set num = num + 1
-		if not num == 2 then 
-			set num = num + 1
-		else
-			set b = not 1+2==3 and b 
-		endif 
-	elseif b and num != 2 then 
-		if num > 1 or num < 1 or num == 1 or num >= 1 or num <= 1 then 
-		endif 
-		set num = num + 1
-	elseif b and num != 2 then 
-		set num = num + 1
-	elseif b and num != 2 then 
-		set num = num + 1
-	else 
-		set num = num + 1
-	endif 
-	
-	
-	
-	loop
-		exitwhen num == 10
-		set num = num + 1
-	
-		if b then 
-			loop 
-				exitwhen b == false 
-				set num = num + 1
-			endloop
-			set num = num + 1
-		endif 
-	endloop
-
-	if false then 
-		return 0
-	elseif false then 
-		if true then
-			return 0
-		endif
-	else 
-		return 0
-	endif 
-
-	loop
-		if true then
-			return 0
-		else 
-			return 0
-		endif
-	endloop
-endfunction
-
-function code2 takes nothing returns integer 
-	local integer i = code1()
-	local integer i2 = 0
-
-	set i2 = code2()
-
-	call code1()
-	call code2()
-	return 0
-endfunction
-
-)";
-	//ParseResult result;
-	//jass_parser(lua, script, result);
-	//
-	//for (auto& v : result.log.errors) {
-	//	std::cout << "[error]:" << v->file << ":" << v->line << ": " << v->message << "\n" << v->at_line << std::endl;
-	//}
-	
 	lua.script("print('finish')");
 
 
-	//printf("%i\n", std::stoi("-1a", 0, 16));
-
-	//lua.script("print(require('ffi'))");
-	//lua.script("print(require('lpeglabel'))");
-	//lua.script("print(require('relabel'))");
-
-	//test(lua);
 	
 	return 0;
 }
