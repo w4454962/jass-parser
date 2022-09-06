@@ -123,7 +123,7 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 		ParseResult result;
 		bool success = jass_parser(lua, config, result);
 
-
+		 
 		std::string src = file.string();
 
 		fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
@@ -198,12 +198,14 @@ void check_script(sol::state& lua, const fs::path file, ParseResult& result) {
 
 		for (auto v : errors) {
 			std::cout << "[error]<" << v->message << ">" << std::endl;
+			std::cout << "{" << v->at_line << "}" << std::endl;
 		}
 	}
 
 	if (warnings.size() > 0) {
 		for (auto v : warnings) {
 			std::cout << "[warning]<" << v->message << ">" << std::endl;
+			std::cout << "{" << v->at_line << "}" << std::endl;
 		}
 	}
 }

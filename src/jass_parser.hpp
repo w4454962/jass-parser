@@ -6,68 +6,19 @@ std::string_view convert_message(std::string_view msg);
 
 int num = 0;
 
-template<typename... Args>
-inline std::string error_format(std::string_view msg, Args... args) {
-	return std::vformat(convert_message(msg), _STD make_format_args(args...));
-}
-typedef std::shared_ptr<std::string> StringPtr;
 
 typedef std::shared_ptr<struct Node> NodePtr;
 typedef std::shared_ptr<struct VarBaseNode> VarPtr;
 typedef std::shared_ptr<struct ExpNode> ExpPtr;
 typedef std::shared_ptr<struct ActionNode> ActionPtr;
 
-
 template<typename N, typename T>
 inline auto CastNode(const T& v) {
 	return std::dynamic_pointer_cast<N>((NodePtr)v);
 }
-using string_t = std::string;
 
+using string_t = std::string_view;
 
-template< typename Type >
-struct Container
-{
-	typedef std::shared_ptr<Type> object_ptr;
-
-	std::vector<object_ptr> list;
-	std::unordered_map <string_t, object_ptr> map;
-
-	bool save(const string_t& name, object_ptr obj) {
-		if (map.find(name) != map.end()) {
-			return false;
-		}
-		list.push_back(obj);
-		map.emplace(name, obj);
-		return true;
-	}
-
-	object_ptr find(const string_t& name) {
-		if (map.find(name) == map.end()) {
-			return nullptr;
-		}
-		return map.at(name);
-	}
-
-	object_ptr back() {
-		if (list.empty()) {
-			return object_ptr();
-		}
-		return list.back();
-	}
-};
-
-enum class ValueType {
-	nothing		= 0,
-	unknow		= 1,
-	null		= 2,
-	code		= 3,
-	integer		= 4,
-	real		= 5,
-	string		= 6,
-	handle		= 7,
-	boolean		= 8
-};
 
 template<typename Key, typename Type>
 struct NodeContainer
@@ -92,6 +43,36 @@ struct NodeContainer
 	}
 };
 
+template<typename type, size_t N>
+struct Stack
+{
+	type pool[N];
+	size_t size = N;
+	size_t pos;
+
+	Stack() {
+		pos = -1;
+	}
+
+	[[nodiscard]] void emplace_back(type v) {
+		pool[++pos] = std::move(v);
+	}
+
+
+	[[nodiscard]] bool empty() {
+		return pos == -1;
+	}
+
+	[[nodiscard]] type& back() {
+		assert(!empty());
+		return pool[pos];
+	}
+
+	[[nodiscard]] void pop_back() {
+		pool[pos--] = nullptr;
+	}
+};
+
 struct Cache {
 	NodeContainer<string_t, struct ExpStringValue> string_nodes;
 	NodeContainer<float, struct ExpRealValue> real_nodes;
@@ -99,13 +80,85 @@ struct Cache {
 	NodeContainer<string_t, struct ExpCodeValue> code_nodes;
 
 	NodeContainer<VarPtr, ExpNode> var_nodes;
+
+	std::unordered_map<std::string_view, std::shared_ptr<std::string>> string_map;
+
+
+	std::string_view string(const std::string_view& s) {
+		std::string_view result;
+
+		auto it = string_map.find(s);
+		if (it != string_map.end()) {
+			result = std::string_view(*it->second);
+		} else {
+			//std::cout << "cache {" << s << "}\n";
+			auto ptr = std::make_shared<std::string>(s);
+			result = std::string_view(*ptr);
+			string_map.emplace(result, ptr);
+		}
+		return result;
+	}
 };
 
 std::shared_ptr<struct Cache> jass_gc;
 
 
 
+class gc_string_t : public std::string_view {
+public:
+	gc_string_t() 
+		:std::string_view()
+	{ }
+	gc_string_t(const char* source)
+		: std::string_view(jass_gc->string(source))
+	{ }
+
+	gc_string_t(const std::string& source) 
+		: std::string_view(jass_gc->string(source))
+	{ }
+
+	gc_string_t(const std::string_view& source)
+		: std::string_view(jass_gc->string(source))
+	{ }
+
+};
+
+
+template< typename Type >
+struct Container
+{
+	typedef std::shared_ptr<Type> object_ptr;
+
+	std::vector<object_ptr> list;
+	std::unordered_map <string_t, object_ptr> map;
+
+	bool save(const string_t& name, object_ptr obj) {
+		if (map.find(name) != map.end()) {
+			return false;
+		}
+		list.push_back(obj);
+		map.emplace(gc_string_t(name), obj);
+		return true;
+	}
+
+	object_ptr find(const string_t& name) {
+		if (map.find(name) == map.end()) {
+			return nullptr;
+		}
+		return map.at(name);
+	}
+
+	object_ptr back() {
+		if (list.empty()) {
+			return object_ptr();
+		}
+		return list.back();
+	}
+};
+
+
 typedef std::function<bool(NodePtr node, int branch_index)> NodeFilter;
+
 
 struct Node {
 	string_t type = "none";
@@ -118,8 +171,8 @@ struct Node {
 
 
 struct VarBaseNode : Node {
-	string_t vtype;
-	string_t name;
+	gc_string_t vtype;
+	gc_string_t name;
 
 	bool has_set;
 
@@ -131,7 +184,7 @@ struct VarBaseNode : Node {
 
 
 struct ExpNode: Node {
-	string_t vtype = "nothing";
+	gc_string_t vtype = "nothing";
 
 	ExpNode() {
 		type = "exp";
@@ -164,7 +217,7 @@ struct	ExpBooleanValue:ExpNode {
 };
 
 struct ExpStringValue :ExpNode {
-	string_t value;
+	gc_string_t value;
 	ExpStringValue(const string_t& value_)
 		: value(value_)
 	{ 
@@ -194,7 +247,7 @@ struct ExpIntegerValue :ExpNode {
 
 
 struct ExpCodeValue : ExpNode {
-	string_t value;
+	gc_string_t value;
 	ExpCodeValue(const string_t& value_)
 		: value(value_)
 	{
@@ -242,7 +295,7 @@ struct ExpNeg : ExpNode {
 
 struct ExpBinary : ExpNode {
 
-	string_t op;
+	gc_string_t op;
 
 	ExpPtr first;
 	ExpPtr second;
@@ -258,7 +311,7 @@ struct ExpBinary : ExpNode {
 };
 
 struct ExpUnary :ExpNode {
-	string_t op;
+	gc_string_t op;
 	ExpPtr first;
 
 	ExpUnary(const string_t& vtype_, ExpPtr& first_, const string_t& op_)
@@ -272,7 +325,7 @@ struct ExpUnary :ExpNode {
 
 
 struct ExpCall : ExpNode {
-	string_t name;
+	gc_string_t name;
 	std::vector<ExpPtr> params;
 
 	bool is_action;
@@ -310,7 +363,7 @@ struct ActionCall :ActionNode {
 };
 
 struct ActionSet : ActionNode {
-	string_t name;
+	gc_string_t name;
 
 	ExpPtr exp;
 
@@ -324,7 +377,7 @@ struct ActionSet : ActionNode {
 
 
 struct ActionSetIndex : ActionNode {
-	string_t name;
+	gc_string_t name;
 	ExpPtr index;
 	ExpPtr exp;
 
@@ -433,11 +486,11 @@ struct ActionLoop :ActionNode {
 
 
 struct TypeNode : Node {
-	string_t file;
+	gc_string_t file;
 	size_t line;
-	string_t name;
+	gc_string_t name;
 	std::shared_ptr<TypeNode> parent;
-	std::set<string_t> childs;
+	std::set<gc_string_t> childs;
 
 	TypeNode(const string_t& name_, std::shared_ptr<TypeNode> parent_, const string_t& file_, size_t line_)
 		: name(name_),
@@ -463,7 +516,7 @@ struct ArgNode : VarBaseNode {
 };
 
 struct LocalNode : VarBaseNode {
-	string_t file;
+	gc_string_t file;
 	size_t line;
 	
 	bool is_array;
@@ -519,11 +572,11 @@ struct GlobalsNode : Node {
 
 
 struct NativeNode : Node {
-	string_t file;
+	gc_string_t file;
 	size_t line;
 	bool is_const;
-	string_t name;
-	string_t returns;
+	gc_string_t name;
+	gc_string_t returns;
 	Container<ArgNode> args;
 
 	NativeNode(bool is_const_, const string_t& name_, const string_t& returns_, const string_t& file_, size_t line_)
@@ -569,23 +622,24 @@ struct FunctionNode : NativeNode {
 
 
 struct Jass : Node {
-	string_t file;
+
+	std::shared_ptr<Cache> gc;
+
+	gc_string_t file;
 
 	Container<TypeNode> types;
 	Container<GlobalNode> globals;
 	Container<NativeNode> natives;
 	Container<FunctionNode> functions;
 
-	std::shared_ptr<Cache> gc;
-
 	std::unordered_map<string_t, std::shared_ptr<LocalNode>> exploits;
 
-	Jass(const string_t& file_)
-		:file(file_)
+	Jass(const string_t& file_, std::shared_ptr<Cache>& gc_)
+		: gc(gc_),
+		file(file_)
 	{
 		type = "jass";
 
-		gc = std::make_shared<Cache>();
 
 		//基础数据类型
 		auto base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing" };
@@ -611,7 +665,7 @@ enum class ErrorLevel : uint8_t {
 struct ParseErrorMessage
 {
 	ErrorLevel level;
-	string_t file;
+	std::string file;
 	std::string message;
 	size_t line;
 	size_t column;
@@ -658,8 +712,8 @@ struct ParseLog {
 
 
 struct ParseConfig {
-	string_t file;
-	string_t script;
+	std::string file;
+	std::string script;
 
 	bool rb;		//双返回值漏洞
 	bool exploit;	//局部变量修改全局变量漏洞
@@ -689,9 +743,6 @@ std::set<string_t> keywords = {
 	"else", "loop", "endloop", "exitwhen", "local", "true", "false"
 };
 
-NodePtr null_value(std::make_shared<ExpNullValue>());
-NodePtr true_value(std::make_shared<ExpBooleanValue>(true));
-NodePtr false_value(std::make_shared<ExpBooleanValue>(false));
 
 bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result) {
 
@@ -710,10 +761,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	const string_t& file = config.file;
 
 	if (!result.jass) {
-		result.jass = std::make_shared<Jass>(file);
+		jass_gc = std::make_shared<Cache>();
+		result.jass = std::make_shared<Jass>(file, jass_gc);
 	}
-	
-	jass_gc = result.jass->gc;
 
 	auto& comments = result.comments;
 	auto& functions = result.jass->functions;
@@ -724,6 +774,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	auto& log = result.log;
 
 	bool has_function = false; 
+
+	Stack<NodePtr, 0x100> block_stack;
+
 
 	auto position = [&]() {
 		auto msg = std::make_shared<ParseErrorMessage>();
@@ -816,9 +869,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 	};
 
-	auto is_extends = [&](const string_t& type_name, const string_t& parent_name) {
-		auto type = types.find(type_name);
-		auto parent = types.find(parent_name);
+	auto is_extends = [&](const gc_string_t& type_name, const gc_string_t& parent_name) {
+		auto type = types.find(std::string(type_name));
+		auto parent = types.find(std::string(parent_name));
 
 		if (!type || !parent) {
 			return true;
@@ -827,7 +880,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (type->name == parent->name) {
 			return true;
 		}
-		return parent->childs.find(type_name) != parent->childs.end();
+		return parent->childs.find(std::string(type_name)) != parent->childs.end();
 	};
 
 	auto get_function = [&](const string_t& name) {
@@ -1166,6 +1219,16 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 
+	auto block_add_node = [&](NodePtr node) {
+		if (block_stack.empty()) {
+			return;
+		}
+
+		auto& back = block_stack.back();
+
+
+		
+	};
 
 	parser["nl"] = [&]() {
 		linecount++;
@@ -1183,15 +1246,21 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		comments[linecount] = str;
 	};
 
-	parser["NULL"] = [] {
+	NodePtr null_value(std::make_shared<ExpNullValue>());
+	
+	parser["NULL"] = [&] {
 		return null_value;
 	};
 
-	parser["TRUE"] = [] {
+	NodePtr true_value(std::make_shared<ExpBooleanValue>(true));
+	
+	parser["TRUE"] = [&] {
 		return true_value;
 	};
 
-	parser["FALSE"] = [] {
+	NodePtr false_value(std::make_shared<ExpBooleanValue>(false));
+
+	parser["FALSE"] = [&] {
 		return false_value;
 	};
 
@@ -1532,7 +1601,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				global->vtype = type;
 				global->is_array = is_array;
 
-				exploits.emplace(name, local);
+				exploits.emplace(gc_string_t(name), local);
 			}
 		}
 		
@@ -1816,6 +1885,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 	parser["LoopStart"] = [&]() {
+
+		auto loop = std::make_shared<ActionLoop>(linecount);
+
+		block_stack.emplace_back((NodePtr)loop);
 		loop_stack_count++;
 		return linecount;
 	};
@@ -1837,6 +1910,11 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				loop->has_return = true;
 			}
 		}
+
+		block_stack.pop_back();
+
+
+
 		return (NodePtr)loop;
 	};
 
@@ -1924,9 +2002,11 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			}
 		}
 		
+		
 		has_function = true;
 		functions.save(name, func);
 
+		block_stack.emplace_back((NodePtr)func);
 		return (NodePtr)func;
 	};
 
@@ -1960,6 +2040,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (endfunction.empty()) {
 			log.error(position(), "ERROR_ENDFUNCTION", func->line);
 		}
+
+		block_stack.pop_back();
 
 		return (NodePtr)func;
 	};
