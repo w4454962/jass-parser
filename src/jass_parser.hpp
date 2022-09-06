@@ -10,7 +10,7 @@ template<typename... Args>
 inline std::string error_format(std::string_view msg, Args... args) {
 	return std::vformat(convert_message(msg), _STD make_format_args(args...));
 }
-
+typedef std::shared_ptr<std::string> StringPtr;
 
 typedef std::shared_ptr<struct Node> NodePtr;
 typedef std::shared_ptr<struct VarBaseNode> VarPtr;
@@ -68,6 +68,41 @@ enum class ValueType {
 	handle		= 7,
 	boolean		= 8
 };
+
+template<typename Key, typename Type>
+struct NodeContainer
+{
+	typedef std::shared_ptr<Type> object_ptr;
+
+	std::unordered_map <Key, object_ptr> map;
+
+	bool save(const Key& key, object_ptr obj) {
+		if (map.find(key) != map.end()) {
+			return false;
+		}
+		map.emplace(key, obj);
+		return true;
+	}
+
+	object_ptr find(const Key& key) {
+		if (map.find(key) == map.end()) {
+			return nullptr;
+		}
+		return map.at(key);
+	}
+};
+
+struct Cache {
+	NodeContainer<string_t, struct ExpStringValue> string_nodes;
+	NodeContainer<float, struct ExpRealValue> real_nodes;
+	NodeContainer<int, struct ExpIntegerValue> integer_nodes;
+	NodeContainer<string_t, struct ExpCodeValue> code_nodes;
+
+	NodeContainer<VarPtr, ExpNode> var_nodes;
+};
+
+std::shared_ptr<struct Cache> jass_gc;
+
 
 
 typedef std::function<bool(NodePtr node, int branch_index)> NodeFilter;
@@ -532,6 +567,7 @@ struct FunctionNode : NativeNode {
 	}
 };
 
+
 struct Jass : Node {
 	string_t file;
 
@@ -540,12 +576,16 @@ struct Jass : Node {
 	Container<NativeNode> natives;
 	Container<FunctionNode> functions;
 
+	std::shared_ptr<Cache> gc;
+
 	std::unordered_map<string_t, std::shared_ptr<LocalNode>> exploits;
 
 	Jass(const string_t& file_)
 		:file(file_)
 	{
 		type = "jass";
+
+		gc = std::make_shared<Cache>();
 
 		//基础数据类型
 		auto base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing" };
@@ -572,10 +612,10 @@ struct ParseErrorMessage
 {
 	ErrorLevel level;
 	string_t file;
-	string_t message;
+	std::string message;
 	size_t line;
 	size_t column;
-	string_t at_line;
+	std::string at_line;
 };
 
 
@@ -585,14 +625,14 @@ struct ParseLog {
 	std::vector<MsgPtr> warnings;
 
 	template<typename... Args>
-	void error(MsgPtr msg, const std::string& fmt, Args... args) {
+	void error(MsgPtr msg, const std::string_view& fmt, Args... args) {
 		try {
 			msg->message = /*fmt + ":" + */std::vformat(convert_message(fmt), std::make_format_args(args...));
 			msg->level = ErrorLevel::error;
 			errors.push_back(msg);
-			printf("%s\n", msg->message.c_str());
+			std::cout << msg->message << std::endl;
 		} catch(...) {
-			printf("Crash %s\n", fmt.c_str());
+			std::cout << "Crash " << fmt << std::endl;
 		}
 	}
 
@@ -612,7 +652,7 @@ struct ParseLog {
 		msg->message = std::vformat(convert_message(fmt), std::make_format_args(args...));
 		msg->level = ErrorLevel::warning;
 		warnings.push_back(msg);
-		printf("%s\n", msg->message.c_str());
+		std::cout << msg->message << std::endl;
 	}
 };
 
@@ -657,6 +697,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 	lua_State* L = lua.lua_state();
 
+	
 	sol::function make_peg = lua.require_file("peg", "peg");
 	sol::table relabel = lua.require_file("relabel", "relabel");
 
@@ -672,6 +713,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		result.jass = std::make_shared<Jass>(file);
 	}
 	
+	jass_gc = result.jass->gc;
+
 	auto& comments = result.comments;
 	auto& functions = result.jass->functions;
 	auto& types = result.jass->types;
@@ -1104,15 +1147,22 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return exp_type;
 	};
 
-	auto cast_integer = [&](const string_t& str, int flag) {
-		NodePtr integer;
+	auto cast_integer = [&](const std::string& str, int flag) {
+		int value;
 		try{
-			integer = std::make_shared<ExpIntegerValue>(std::stoul(str, 0, flag));
+			value = std::stoul(str, 0, flag);
 		} catch(...) {
 			log.error(position(), "WARNING_INTEGER_OVERFLOW", str);
-			integer = std::make_shared<ExpIntegerValue>(0);
 		}
-		return integer;
+
+		auto node = jass_gc->integer_nodes.find(value);
+		if (node) {
+			return (NodePtr)node;
+		}
+		node = std::make_shared<ExpIntegerValue>(value);
+		jass_gc->integer_nodes.save(value, node);
+
+		return (NodePtr)node;
 	};
 
 
@@ -1146,17 +1196,32 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 	parser["String"] = [](const string_t& str) {
-		return (NodePtr)std::make_shared<ExpStringValue>(str);
+		auto node = jass_gc->string_nodes.find(str);
+		if (node) {
+			return (NodePtr)node;
+		}
+		node = std::make_shared<ExpStringValue>(str);
+		jass_gc->string_nodes.save(str, node);
+
+		return (NodePtr)node;
 	};
 	
 	parser["Real"] = [](const std::string& neg, const std::string& str) {
-		float value = 0;
+
+		float value = 0.f;
 		try {
 			value = std::stof(neg + str);
-		} catch(...) {
-			
+		} catch (...) { 
+
 		}
-		return (NodePtr)std::make_shared<ExpRealValue>(value);
+		auto node = jass_gc->real_nodes.find(value);
+		if (node) {
+			return (NodePtr)node;
+		}
+		node = std::make_shared<ExpRealValue>(value);
+		jass_gc->real_nodes.save(value, node);
+
+		return (NodePtr)node;
 	};
 
 	parser["Integer8"] = [&](const std::string& neg, const std::string& str) {
@@ -1185,7 +1250,14 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			}
 		}
 		i = neg.length() == 0 ? i : -i;
-		return (NodePtr)std::make_shared<ExpIntegerValue>(i);
+
+		auto node = jass_gc->integer_nodes.find(i);
+		if (node) {
+			return (NodePtr)node;
+		}
+		node = std::make_shared<ExpIntegerValue>(i);
+		jass_gc->integer_nodes.save(i, node);
+		return (NodePtr)node;
 	};
 
 	parser["Code"] = [&](const string_t& name, sol::object pl) {
@@ -1196,7 +1268,16 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		} else if (func && func->args.list.size() > 0) {
 			log.warning(position(), "ERROR_CODE_HAS_CODE", name);
 		}
-		return (NodePtr)std::make_shared<ExpCodeValue>(name);
+
+
+		auto node = jass_gc->code_nodes.find(name);
+		if (node) {
+			return (NodePtr)node;
+		}
+		node = std::make_shared<ExpCodeValue>(name);
+		jass_gc->code_nodes.save(name, node);
+
+		return (NodePtr)node;
 	};
 
 	parser["ACall"] = [&](const string_t& name, sol::variadic_args args) {
@@ -1255,7 +1336,12 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (!var) {
 			return NodePtr();
 		}
-		auto exp_var = std::make_shared<ExpVar>(var);
+
+		auto exp_var = jass_gc->var_nodes.find(var);
+		if (!exp_var) {
+			exp_var = std::make_shared<ExpVar>(var);
+			jass_gc->var_nodes.save(var, exp_var);
+		}
 
 		return (NodePtr)exp_var;
 	};
@@ -1786,8 +1872,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 
 ;			for (size_t i = 0; i < takes.size(); i += 2) {
-				const string_t type = takes[i + 1];
-				const string_t name = takes[i + 2];
+				const std::string type = takes[i + 1];
+				const std::string name = takes[i + 2];
 
 				auto arg = std::make_shared<ArgNode>(type, name);
 
@@ -1822,8 +1908,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (takes_.get_type() == sol::type::table) {
 			auto takes = takes_.as<sol::lua_table>();
 			for (size_t i = 0; i < takes.size(); i += 2) {
-				const string_t& type = takes[i + 1];
-				const string_t& name = takes[i + 2];
+				const std::string& type = takes[i + 1];
+				const std::string& name = takes[i + 2];
 
 				auto arg = std::make_shared<ArgNode>(type, name);
 
