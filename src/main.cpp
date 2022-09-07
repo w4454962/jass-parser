@@ -223,7 +223,7 @@ void check(sol::state& lua) {
 
 	check_script(lua, path / "common.j", *result);
 	check_script(lua, path / "blizzard.j", *result);
-	//check_script(*lua, path / "war3map.j", *result); 
+	check_script(lua, path / "war3map.j", *result); 
 
 	double mem_end = lua["collectgarbage"]("count");
 
@@ -234,6 +234,8 @@ void check(sol::state& lua) {
 
 
 	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
+
+	return;
 }
 
 
@@ -244,22 +246,31 @@ int main(int argn, char** argv) {
 	init_config();
 
 
-	sol::state* lua = new sol::state();
+	sol::state lua;
 
-	lua->open_libraries();
+	lua.open_libraries();
 
-	lua->require("lpeglabel", luaopen_lpeglabel);
+	//lua.open_libraries(sol::lib::jit);
 
-	lua->require_script("relabel", relabel_script, false, "relabel");
-	lua->require_script("peg", peg_script, false, "peg");
+	lua["jit"]["on"](true);
+	lua["jit"]["opt"]["start"](3);
+
+	lua.require("lpeglabel", luaopen_lpeglabel);
+
+	lua.require_script("relabel", relabel_script, false, "relabel");
+	lua.require_script("peg", peg_script, false, "peg");
+
+
+
 
 	//tests(lua, fs::path(argv[1]));
 
-	check(*lua);
+	check(lua);
 
-	delete lua;
-	lua = nullptr;
+	//delete lua;
+	//lua = nullptr;
 ;
+	lua.require_file("main", (fs::current_path() / "src2" / "main.lua").string());
 	
 	return 0;
 }

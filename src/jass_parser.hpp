@@ -795,11 +795,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 	lua_State* L = lua.lua_state();
 
-	
-	sol::function make_peg = lua.require_file("peg", "peg");
-	sol::table relabel = lua.require_file("relabel", "relabel");
+	sol::function peg_parser = lua.require_file("peg", "peg");
 
-	sol::function peg_parser = make_peg(jass_peg_rule);
+	sol::table relabel = lua.require_file("relabel", "relabel");
 
 	sol::table parser = lua.create_table();
 	
@@ -1276,6 +1274,19 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		back->add_child(node);
 	};
 
+	auto lua_nil_table = lua.create_table();
+
+	auto mt = lua.create_table();
+	lua_nil_table[sol::metatable_key] = mt;
+
+	mt["__tostring"] = []() {
+		return "<null>";
+	};
+
+	parser["Nil"] = [&]() {
+		return lua_nil_table;
+	};
+
 	parser["nl"] = [&]() {
 		linecount++;
 	};
@@ -1375,10 +1386,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return (NodePtr)node;
 	};
 
-	parser["Code"] = [&](const string_t& name, sol::object pl) {
+	parser["Code"] = [&](const string_t& name, std::optional<string_t> pl) {
 		auto func = get_function(name);
 
-		if (pl.get_type() == sol::type::string && pl.as<std::string>().length() > 0) {
+		if (pl.has_value() && !pl.value().empty()) {
 			log.error(position(), "ERROR_CODE_HAS_CODE", name);
 		} else if (func && func->args.list.size() > 0) {
 			log.warning(position(), "ERROR_CODE_HAS_CODE", name);
@@ -1540,10 +1551,11 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return (NodePtr)gs;
 	};
 
-	parser["Global"] = [&](const string_t& constant, const string_t& type, const string_t& array, const string_t& name, sol::object lexp) {
+	parser["Global"] = [&](const string_t& constant, const string_t& type, const string_t& array, const string_t& name, std::optional<NodePtr> lexp) {
 		NodePtr exp;
-		if (lexp.get_type() == sol::type::userdata) {
-			exp = lexp.as<NodePtr>();
+
+		if (lexp.has_value()) {
+			exp = lexp.value();
 		}
 		check_name(name);
 		check_new_name(name);
@@ -1641,13 +1653,13 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 
-	parser["Local"] = [&](sol::object loc, sol::object exp_){
+	parser["Local"] = [&](sol::object loc, std::optional<NodePtr> exp_){
 
 		auto local = CastNode<LocalNode>(loc.as<NodePtr>());
 		ExpPtr exp;
 
-		if (exp_.get_type() == sol::type::userdata) {
-			exp = CastNode<ExpNode>(exp_.as<NodePtr>());
+		if (exp_.has_value()) {
+			exp = CastNode<ExpNode>(exp_.value());
 		}
 
 		if (local && exp) {
@@ -1693,10 +1705,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return res;
 	};
 
-	parser["Action"] = [&](const string_t& file, size_t line, sol::object act) {
+	parser["Action"] = [&](const string_t& file, size_t line, std::optional<NodePtr> node) {
 
-		if (act.get_type() == sol::type::userdata) {
-			auto action = CastNode<ActionNode>(act.as<NodePtr>());
+		if (node.has_value()) {
+			auto action = CastNode<ActionNode>(node.value());
 
 			block_add_node(action);
 		}
@@ -1939,7 +1951,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		auto action_if = CastNode<ActionIf>(block_stack.back());
 
-		if (endif.get_type() == sol::type::nil) {
+		if (endif.get_type() != sol::type::string) {
 			auto if_node = action_if->if_nodes[0];
 			log.error(position(), "ERROR_ENDIF", if_node->line);
 		}
@@ -1979,7 +1991,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 	parser["Loop"] = [&](size_t line, sol::object endloop) {
-		if (endloop.get_type() == sol::type::nil) {
+		if (endloop.get_type() != sol::type::string) {
 			log.error(position(), "ERROR_ENDLOOP", line);
 		}
 		loop_stack_count--;
@@ -2012,23 +2024,23 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	parser["Native"] = [&](
 		const string_t& file,
 		size_t line, 
-		const string_t& constant,
+		std::optional<sol::object> constant,
 		const string_t& name,
-		sol::object takes_,
-		const string_t& returns
+		std::optional<sol::object> takes_,
+		const string_t returns
 	) {
 		check_name(name);
 		check_new_name(name);
 		check_type(returns);
 
-		bool is_const = !constant.empty();
+		bool is_const = constant.has_value() && !constant.value().as<string_t>().empty();
 
 		auto native = std::make_shared<NativeNode>(is_const, name, returns, file, line);
 
 
-		if (takes_.get_type() == sol::type::table) {
+		if (takes_.has_value() && takes_.value().get_type() == sol::type::table) {
 			
-			sol::lua_table takes = takes_.as<sol::lua_table>();
+			sol::lua_table takes = takes_.value().as<sol::lua_table>();
 
 
 ;			for (size_t i = 0; i < takes.size(); i += 2) {
@@ -2056,7 +2068,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 
 
-	parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, sol::object takes_, const string_t& returns) {
+	parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, std::optional<sol::lua_table> takes_, const string_t& returns) {
 		check_name(name);
 		check_new_name(name);
 		check_type(returns);
@@ -2065,8 +2077,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		auto func = std::make_shared<FunctionNode>(is_const, name, returns, file, linecount);
 
-		if (takes_.get_type() == sol::type::table) {
-			auto takes = takes_.as<sol::lua_table>();
+		if (takes_.has_value()) {
+			auto& takes = takes_.value();
 			for (size_t i = 0; i < takes.size(); i += 2) {
 				const std::string& type = takes[i + 1];
 				const std::string& name = takes[i + 2];
@@ -2162,19 +2174,19 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		log.error(position(), "ERROR_LOCAL_IN_FUNCTION");
 	};
 
-	peg_parser(config.script, parser);
 
 	//返回的节点必须是 jass 否则代表语法检测失败
-	//sol::object res = peg_parser(config.script, parser);
+	std::optional<NodePtr> res = peg_parser(jass_peg_rule, config.script, parser);
 
-	//if (res.get_type() != sol::type::userdata) {
-	//	return false;
-	//}
-	//
-	//NodePtr jass = res.as<NodePtr>();
-	//if (!jass || jass->type != "jass") {
-	//	return false;
-	//}
+
+	if (!res.has_value()) {
+		return false;
+	}
+	
+	NodePtr jass = res.value();
+	if (!jass || jass->type != "jass") {
+		return false;
+	}
 
 	return true;
 }
