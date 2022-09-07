@@ -132,11 +132,11 @@ struct Container
 	std::vector<object_ptr> list;
 	std::unordered_map <string_t, object_ptr> map;
 
-	bool save(const string_t& name, object_ptr obj) {
+	bool save(const string_t& name, const object_ptr& obj) {
 		if (map.find(name) != map.end()) {
 			return false;
 		}
-		list.push_back(obj);
+		list.emplace_back(obj);
 		map.emplace(gc_string_t(name), obj);
 		return true;
 	}
@@ -197,7 +197,7 @@ struct Node {
 	virtual const NodeType get_type (){  return type; }
 	virtual bool each_childs(const NodeFilter& filter) { return 0; }
 	virtual size_t get_childs_size() { return 0; }
-	virtual bool add_child(NodePtr node) { return 0; }
+	virtual bool add_child(const NodePtr& node) { return 0; }
 };
 
 
@@ -478,8 +478,8 @@ struct IfNode : ActionNode {
 		return actions.size();
 	}
 
-	virtual bool add_child(NodePtr node) override {
-		actions.push_back(CastNode<ActionNode>(node));
+	virtual bool add_child(const NodePtr& node) override {
+		actions.emplace_back(CastNode<ActionNode>(node));
 		return 1;
 	}
 };
@@ -509,8 +509,8 @@ struct ActionIf : ActionNode {
 		return size; 
 	}
 
-	virtual bool add_child(NodePtr node) override {
-		if_nodes.push_back(CastNode<IfNode>(node));
+	virtual bool add_child(const NodePtr& node) override {
+		if_nodes.emplace_back(CastNode<IfNode>(node));
 		return 1; 
 	}
 
@@ -540,8 +540,8 @@ struct ActionLoop :ActionNode {
 		return actions.size();
 	}
 
-	virtual bool add_child(NodePtr node) override {
-		actions.push_back(CastNode<ActionNode>(node));
+	virtual bool add_child(const NodePtr& node) override {
+		actions.emplace_back(CastNode<ActionNode>(node));
 		return 1;
 	}
 };
@@ -691,8 +691,8 @@ struct FunctionNode : NativeNode {
 	}
 
 
-	virtual bool add_child(NodePtr node) override {
-		actions.push_back(CastNode<ActionNode>(node));
+	virtual bool add_child(const NodePtr& node) override {
+		actions.emplace_back(CastNode<ActionNode>(node));
 		return 1;
 	}
 
@@ -761,7 +761,7 @@ struct ParseLog {
 		try {
 			msg->message = /*fmt + ":" + */std::vformat(convert_message(fmt), std::make_format_args(args...));
 			msg->level = ErrorLevel::error;
-			errors.push_back(msg);
+			errors.emplace_back(msg);
 			std::cout << msg->message << std::endl;
 		} catch(...) {
 			std::cout << "Crash " << fmt << std::endl;
@@ -783,7 +783,7 @@ struct ParseLog {
 	void warning(MsgPtr msg, const std::string_view& fmt, Args... args) {
 		msg->message = std::vformat(convert_message(fmt), std::make_format_args(args...));
 		msg->level = ErrorLevel::warning;
-		warnings.push_back(msg);
+		warnings.emplace_back(msg);
 		std::cout << msg->message << std::endl;
 	}
 };
@@ -1446,7 +1446,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		auto call = std::make_shared<ExpCall>(func->name, func->returns);
 
 		for (auto v : args) {
-			call->params.push_back(CastNode<ExpNode>(v));
+			call->params.emplace_back(CastNode<ExpNode>(v));
 		}
 
 		check_call(func, call);
@@ -1746,7 +1746,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		for (auto v : args) {
 			if (v.get_type() != sol::type::nil) {
-				call->params.push_back(CastNode<ExpNode>(v));
+				call->params.emplace_back(CastNode<ExpNode>(v));
 			}
 
 		}
