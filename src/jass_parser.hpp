@@ -54,8 +54,8 @@ struct Stack
 		pos = -1;
 	}
 
-	[[nodiscard]] void emplace_back(type v) {
-		pool[++pos] = std::move(v);
+	[[nodiscard]] void emplace_back(const type& v) {
+		pool[++pos] = v;
 	}
 
 
@@ -157,15 +157,16 @@ struct Container
 };
 
 
-typedef std::function<bool(NodePtr node, int branch_index)> NodeFilter;
+typedef std::function<bool(NodePtr node, size_t branch_index)> NodeFilter;
 
 
 struct Node {
 	string_t type = "none";
 
 	virtual const string_t get_type (){  return type; }
-	virtual void each_childs(const NodeFilter& filter) { }
+	virtual bool each_childs(const NodeFilter& filter) { return 0; }
 	virtual size_t get_childs_size() { return 0; }
+	virtual bool add_child(NodePtr node) { return 0; }
 };
 
 
@@ -432,6 +433,24 @@ struct IfNode : ActionNode {
 	{
 		type = "if";
 	}
+
+	virtual bool each_childs(const NodeFilter& filter) override {
+		for (auto& action : actions) {
+			if (filter(action, (size_t)iftype))
+				return 1;
+		}
+
+		return 0;
+	}
+
+	virtual size_t get_childs_size() override {
+		return actions.size();
+	}
+
+	virtual bool add_child(NodePtr node) override {
+		actions.push_back(CastNode<ActionNode>(node));
+		return 1;
+	}
 };
 
 struct ActionIf : ActionNode {
@@ -441,13 +460,13 @@ struct ActionIf : ActionNode {
 		type = "action_if";
 	}
 
-	virtual void each_childs(const NodeFilter& filter) override {
+	virtual bool each_childs(const NodeFilter& filter) override {
 		for (auto& node : if_nodes) {
-			size_t brnch_index = (size_t)node->iftype;
-			for (auto& action : node->actions) {
-				if (filter(action, brnch_index))  return;
+			if (filter(node, (size_t)node->iftype)) {
+				return 1;
 			}
 		}
+		return 0;
 	}
 
 	virtual size_t get_childs_size() override {
@@ -458,6 +477,12 @@ struct ActionIf : ActionNode {
 		}
 		return size; 
 	}
+
+	virtual bool add_child(NodePtr node) override {
+		if_nodes.push_back(CastNode<IfNode>(node));
+		return 1; 
+	}
+
 };
 
 struct ActionLoop :ActionNode {
@@ -471,15 +496,22 @@ struct ActionLoop :ActionNode {
 		type = "action_loop";
 	}
 
-	virtual void each_childs(const NodeFilter& filter) override {
+	virtual bool each_childs(const NodeFilter& filter) override {
 		size_t brnch_index = 0;
 		for (auto& action : actions) {
-			if (filter(action, brnch_index))  return;
+			if (filter(action, brnch_index))
+				return 1;
 		}
+		return 0;
 	}
 
 	virtual size_t get_childs_size() override {
 		return actions.size();
+	}
+
+	virtual bool add_child(NodePtr node) override {
+		actions.push_back(CastNode<ActionNode>(node));
+		return 1;
 	}
 };
 
@@ -555,13 +587,17 @@ struct GlobalsNode : Node {
 		globals = nullptr;
 	}
 
-	virtual void each_childs(const NodeFilter& filter) override {
-		if (!globals) return;
+	virtual bool each_childs(const NodeFilter& filter) override {
+		if (!globals) 
+			return 0;
 
 		size_t brnch_index = 0;
 		for (auto& global : globals->list) {
-			if (filter(global, brnch_index))  return;
+			if (filter(global, brnch_index))  
+				return 1;
 		}
+
+		return 0;
 	}
 
 	virtual size_t get_childs_size() override {
@@ -604,20 +640,31 @@ struct FunctionNode : NativeNode {
 		has_return_any = false;
 	}
 
-	virtual void each_childs(const NodeFilter& filter) override {
+	virtual bool each_childs(const NodeFilter& filter) override {
 		size_t brnch_index = 0;
 		for (auto& local : locals.list) {
-			if (filter(local, brnch_index))  return;
+			if (filter(local, brnch_index))  
+				return 1;
 		}
 
 		for (auto& action : actions) {
-			if (filter(action, brnch_index))  return;
+			if (filter(action, brnch_index))  
+				return 1;
 		}
+
+		return 0;
 	}
 
 	virtual size_t get_childs_size() override {
 		return locals.list.size() + actions.size();
 	}
+
+
+	virtual bool add_child(NodePtr node) override {
+		actions.push_back(CastNode<ActionNode>(node));
+		return 1;
+	}
+
 };
 
 
@@ -1225,9 +1272,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 
 		auto& back = block_stack.back();
-
-
-		
+		//std::cout << "add child [" << back->type << "] << " << node->type << "\n";
+		back->add_child(node);
 	};
 
 	parser["nl"] = [&]() {
@@ -1349,38 +1395,23 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return (NodePtr)node;
 	};
 
-	parser["ACall"] = [&](const string_t& name, sol::variadic_args args) {
+	parser["ECall"] = [&](const string_t& name, sol::variadic_args args) {
 		auto func = get_function(name);
-		auto current = functions.back();
-	
-		if (!func && current && current->is_const && !func->is_const) {
-			log.error(position(), "ERROR_CALL_IN_CONSTANT", name);
-		}
 
-		std::string exp_type = "nothing";
-		if (func) {
-			exp_type = func->returns;
+		if (!func) {
+			return NodePtr();
 		}
+		auto call = std::make_shared<ExpCall>(func->name, func->returns);
 
-		auto call = std::make_shared<ExpCall>(name, exp_type);
-		
-		call->is_action = true;
-		
 		for (auto v : args) {
-			if (v.get_type() != sol::type::nil) {
-				call->params.push_back(CastNode<ExpNode>(v));
-			}
-			
+			call->params.push_back(CastNode<ExpNode>(v));
 		}
-	
-		if (func) {
-			check_call(func, call);
-		}
-		
-		auto action = std::make_shared<ActionCall>(call);
 
-		return (NodePtr)action;
+		check_call(func, call);
+
+		return (NodePtr)call;
 	};
+
 
 
 	parser["Vari"] = [&](const string_t& name, NodePtr index) {
@@ -1662,33 +1693,58 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return res;
 	};
 
-	parser["Action"] = [](const string_t& file, size_t line, sol::object action) {
+	parser["Action"] = [&](const string_t& file, size_t line, sol::object act) {
 
-		return action;
+		if (act.get_type() == sol::type::userdata) {
+			auto action = CastNode<ActionNode>(act.as<NodePtr>());
+
+			block_add_node(action);
+		}
+
+		//return action;
 	};
 
-	parser["ECall"] = [&](const string_t& name, sol::variadic_args args) {
-		auto func = get_function(name);
 
-		if (!func) {
-			return NodePtr();
+	parser["ACall"] = [&](const string_t& name, sol::variadic_args args) {
+		auto func = get_function(name);
+		auto current = functions.back();
+
+		if (!func && current && current->is_const && !func->is_const) {
+			log.error(position(), "ERROR_CALL_IN_CONSTANT", name);
 		}
-		auto call = std::make_shared<ExpCall>(func->name, func->returns);
+
+		std::string exp_type = "nothing";
+		if (func) {
+			exp_type = func->returns;
+		}
+
+		auto call = std::make_shared<ExpCall>(name, exp_type);
+
+		call->is_action = true;
 
 		for (auto v : args) {
-			call->params.push_back(CastNode<ExpNode>(v));
+			if (v.get_type() != sol::type::nil) {
+				call->params.push_back(CastNode<ExpNode>(v));
+			}
+
 		}
 
-		check_call(func, call);
+		if (func) {
+			check_call(func, call);
+		}
 
-		return (NodePtr)call;
+		auto action = std::make_shared<ActionCall>(call);
+
+		block_add_node(action);
+
+		//return(NodePtr)action;
 	};
 
 	parser["Set"] = [&](const string_t& name, sol::variadic_args args) {
 		auto var = get_variable(name);
 
 		if (!var) {
-			return NodePtr();
+			return; //NodePtr();
 		}
 
 		if (args.size() == 1) {
@@ -1698,7 +1754,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 			auto set = std::make_shared<ActionSet>(name, exp);
 			
-			return (NodePtr)set;
+			block_add_node(set);
+
+			//return(NodePtr)set;
 
 		} else {
 			auto index = CastNode<ExpNode>(args[0]);
@@ -1707,7 +1765,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 			auto setindex = std::make_shared<ActionSetIndex>(name, index, exp);
 
-			return (NodePtr)setindex;
+			block_add_node(setindex);
+
+			//return(NodePtr)setindex;
 		}
 	};
 
@@ -1722,7 +1782,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		func->has_return_any = true;
 
-		return (NodePtr)ret;
+		block_add_node(ret);
+		//return (NodePtr)ret;
 	};
 
 
@@ -1767,7 +1828,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		
 		auto ret = std::make_shared<ActionReturn>(exp);
 
-		return (NodePtr)ret;
+		block_add_node(ret);
+
+		//return (NodePtr)ret;
 	};
 
 	parser["Exit"] = [&](NodePtr exp) {
@@ -1775,7 +1838,101 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			log.error(position(), "ERROR_EXITWHEN");
 		}
 		auto exit = std::make_shared<ActionExit>(CastNode<ExpNode>(exp));
-		return (NodePtr)exit;
+
+		block_add_node(exit);
+		//return (NodePtr)exit;
+	};
+
+	
+	parser["IfStart"] = [&]() {
+
+		auto action_if = std::make_shared<ActionIf>();
+
+		block_stack.emplace_back(action_if);
+
+		auto if_node = std::make_shared<IfNode>(IfNode::TYPE::IF, file, linecount);
+
+		block_stack.emplace_back(if_node);
+
+	};
+
+	parser["If"] = [&](NodePtr condition) {
+		auto exp = CastNode<ExpNode>(condition);
+		if (exp->vtype != "boolean") {
+			log.warning(position(), "ERROR_CONDITION_TYPE");
+		}
+
+		auto if_node = CastNode<IfNode>(block_stack.back());
+
+		if_node->condition = exp;
+
+		for (auto& act : if_node->actions) {
+			auto action = CastNode<ActionNode>(act);
+			if (action->has_return) {
+				if_node->has_return = true;
+				break;
+			}
+		}
+
+		block_stack.pop_back();
+
+		block_add_node(if_node);
+	};
+
+
+	parser["ElseifStart"] = [&]() {
+
+		auto elseif_node = std::make_shared<IfNode>(IfNode::TYPE::ELSEIF, file, linecount);
+
+		block_stack.emplace_back(elseif_node);
+
+	};
+
+	parser["Elseif"] = [&](NodePtr condition) {
+		auto exp = CastNode<ExpNode>(condition);
+		if (exp->vtype != "boolean") {
+			log.error(position(), "ERROR_CONDITION_TYPE");
+		}
+
+		auto elseif_node = CastNode<IfNode>(block_stack.back());
+
+		elseif_node->condition = exp;
+		
+		for (auto& act : elseif_node->actions) {
+			auto action = CastNode<ActionNode>(act);
+			if (action->has_return) {
+				elseif_node->has_return = true;
+				break;
+			}
+		}
+
+		block_stack.pop_back();
+
+		block_add_node(elseif_node);
+	};
+
+	parser["ElseStart"] = [&]() {
+
+		auto else_node = std::make_shared<IfNode>(IfNode::TYPE::ELSE, file, linecount);
+
+		block_stack.emplace_back(else_node);
+	};
+
+	parser["Else"] = [&]() {
+		auto else_node = CastNode<IfNode>(block_stack.back());
+		
+
+		for (auto& act : else_node->actions) {
+			auto action = CastNode<ActionNode>(act);
+			if (action->has_return) {
+				else_node->has_return = true;
+				break;
+			}
+		}
+
+		block_stack.pop_back();
+
+		block_add_node(else_node);
 	};
 
 	parser["Logic"] = [&](sol::lua_table ifelse, sol::object endif) {
@@ -1785,110 +1942,37 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			log.error(position(), "ERROR_ENDIF", if_node->line);
 		}
 
-		auto action_if = std::make_shared<ActionIf>();
+		auto action_if = CastNode<ActionIf>(block_stack.back());
 
+		bool has_return = true;
+		bool has_else = false;
 
-		action_if->if_nodes.resize(ifelse.size());
-
-		int has_return_branch = 0;
-		for (size_t i = 0; i < ifelse.size(); i++) { 
-			auto node = CastNode<IfNode>(ifelse[i + 1]);
-			action_if->if_nodes[i] = node;
-			if (node->has_return) {
-				has_return_branch++;
+		for (auto& node : action_if->if_nodes) {
+			auto ifnode = CastNode<IfNode>(node);
+			if (!ifnode->has_return) {
+				has_return = false;
+			}
+			if (ifnode->iftype == IfNode::TYPE::ELSE) {
+				has_else = true;
 			}
 		}
 
-		bool has_return = false;
-		if (has_return_branch == ifelse.size() && has_return_branch > 0) { //每个分支必须都要有返回值
-			std::shared_ptr<IfNode> backend = CastNode<IfNode>(ifelse[has_return_branch]);
 
-			has_return = backend->iftype == IfNode::TYPE::ELSE; //并且最后一个分支是else的时候 才代表整个逻辑有返回值
-		}
-	
-		action_if->has_return = has_return;
+		//每个分支必须都要有返回值 并且最后一个分支是else的时候 才代表整个逻辑有返回值
+		action_if->has_return = has_return && has_else;
 
-		return (NodePtr)action_if;
-	};
+		block_stack.pop_back();
 
+		block_add_node(action_if);
 
-	parser["IfStart"] = [&]() {
-		sol::variadic_results res;
-
-		res.push_back(sol::make_object(lua, file));
-		res.push_back(sol::make_object(lua, linecount));
-
-		return res;
-	};
-
-	parser["If"] = [&](const string_t& file, size_t line, NodePtr condition, sol::variadic_args args) {
-		auto exp = CastNode<ExpNode>(condition);
-		if (exp->vtype != "boolean") {
-			log.warning(position(), "ERROR_CONDITION_TYPE");
-		}
-
-		auto if_node = std::make_shared<IfNode>(IfNode::TYPE::IF, file, line);
-		if_node->condition = exp;
-		for (auto v : args) {
-			if (v.get_type() != sol::type::nil) {
-				auto action = CastNode<ActionNode>(v);
-				if_node->actions.emplace_back(action);
-				if (action->has_return) {
-					if_node->has_return = true;
-				}
-			}
-		}
-
-		return (NodePtr)if_node;
-	};
-
-
-	parser["ElseifStart"] = parser["IfStart"];
-
-
-	parser["Elseif"] = [&](const string_t& file, size_t line, NodePtr condition, sol::variadic_args args) {
-		auto exp = CastNode<ExpNode>(condition);
-		if (exp->vtype != "boolean") {
-			log.error(position(), "ERROR_CONDITION_TYPE");
-		}
-
-		auto elseif_node = std::make_shared<IfNode>(IfNode::TYPE::ELSEIF, file, line);
-		elseif_node->condition = exp;
-		for (auto v : args) {
-			if (v.get_type() != sol::type::nil) {
-				auto action = CastNode<ActionNode>(v);
-				elseif_node->actions.emplace_back(action);
-				if (action->has_return) {
-					elseif_node->has_return = true;
-				}
-			}
-		}
-
-		return (NodePtr)elseif_node;
-	};
-
-	parser["ElseStart"] = parser["IfStart"];
-
-	parser["Else"] = [&](const string_t& file, size_t line, sol::variadic_args args) {
-		auto else_node = std::make_shared<IfNode>(IfNode::TYPE::ELSE, file, line);
-		for (auto v : args) {
-			if (v.get_type() != sol::type::nil) {
-				auto action = CastNode<ActionNode>(v);
-				else_node->actions.emplace_back(action);
-				if (action->has_return) {
-					else_node->has_return = true;
-				}
-			}
-			
-		}
-		return (NodePtr)else_node;
 	};
 
 	parser["LoopStart"] = [&]() {
 
 		auto loop = std::make_shared<ActionLoop>(linecount);
 
-		block_stack.emplace_back((NodePtr)loop);
+		block_stack.emplace_back(loop);
+
 		loop_stack_count++;
 		return linecount;
 	};
@@ -1899,23 +1983,20 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 		loop_stack_count--;
 
-		auto loop = std::make_shared<ActionLoop>(linecount);
+		auto loop = CastNode<ActionLoop>(block_stack.back());
 
-		loop->actions.resize(chunks.size());
 
-		for (size_t i = 0; i < chunks.size(); i++) {
-			auto action = CastNode<ActionNode>(chunks[i + 1]);
-			loop->actions[i] = action;
+		for (auto& act : loop->actions) {
+			auto action = CastNode<ActionNode>(act);
 			if (action->has_return) {
 				loop->has_return = true;
+				break;
 			}
 		}
 
 		block_stack.pop_back();
 
-
-
-		return (NodePtr)loop;
+		block_add_node(loop);
 	};
 
 	
@@ -2006,22 +2087,21 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		has_function = true;
 		functions.save(name, func);
 
-		block_stack.emplace_back((NodePtr)func);
+		block_stack.emplace_back(func);
+
 		return (NodePtr)func;
 	};
 
 	parser["FunctionBody"] = [&](sol::object locals, sol::lua_table actions) {
 		auto func = functions.back();
 
-		func->actions.resize(actions.size());
-
 		bool has_return = false;
 
-		for (size_t i = 0; i < actions.size(); i++) {
-			auto action = CastNode<ActionNode>(actions[i + 1]);
-			func->actions[i] = action;
+		for (auto& act : func->actions) {
+			auto action = CastNode<ActionNode>(act);
 			if (action->has_return) {
 				has_return = true;
+				break;
 			}
 		}
 
@@ -2032,6 +2112,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				log.error(position(), "ERROR_MISS_RETURN", func->name, func->returns);
 			}
 		}
+
 	};
 
 	parser["FunctionEnd"] = [&](const string_t& endfunction) {
