@@ -210,14 +210,39 @@ void check_script(sol::state& lua, const fs::path file, ParseResult& result) {
 	}
 }
 
+void check(sol::state& lua) {
+
+
+	clock_t start = clock();
+	double mem_start = lua["collectgarbage"]("count");
+
+	fs::path path = fs::current_path() / "war3" / "24";
+
+
+	ParseResult* result = new ParseResult();
+
+	check_script(lua, path / "common.j", *result);
+	check_script(lua, path / "blizzard.j", *result);
+	//check_script(*lua, path / "war3map.j", *result); 
+
+	double mem_end = lua["collectgarbage"]("count");
+
+	//check_script(lua, fs::current_path() / "tests" / "aa.j", *result);
+
+	std::cout << "lua memory start " << mem_start / 1024 << " mb" << std::endl;
+	std::cout << "lua memory end " << mem_end / 1024 << " mb" << std::endl;
+
+
+	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
+}
+
+
 int main(int argn, char** argv) {
 
 	std::locale::global(std::locale("zh_CN.UTF-8"));
 
 	init_config();
 
-	
-	clock_t start = clock();
 
 	sol::state* lua = new sol::state();
 
@@ -230,29 +255,10 @@ int main(int argn, char** argv) {
 
 	//tests(lua, fs::path(argv[1]));
 
-	double mem_start = (*lua)["collectgarbage"]("count");
-
-	fs::path path = fs::current_path() / "war3" / "24";
-
-
-	ParseResult* result = new ParseResult();
-
-	check_script(*lua, path / "common.j", *result);
-	check_script(*lua, path / "blizzard.j", *result);
-	check_script(*lua, path / "war3map.j", *result); 
-
-	double mem_end = (*lua)["collectgarbage"]("count");
-
-	//check_script(lua, fs::current_path() / "tests" / "aa.j", *result);
-
-	std::cout << "lua memory start " << mem_start / 1024 << " mb" << std::endl;
-	std::cout << "lua memory end " << mem_end / 1024 << " mb" << std::endl;
+	check(*lua);
 
 	delete lua;
 	lua = nullptr;
-
-	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
-
 ;
 	
 	return 0;

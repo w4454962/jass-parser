@@ -18,10 +18,9 @@ Chunk       <-  (   Type
 Function    <-  FDef -> FunctionStart Nl^MISS_NL
                 (
                     FLocals
-                    Actions
+                    {|Actions|}
                 ) -> FunctionBody
                 FEnd -> FunctionEnd
-
 FDef        <-  {CONSTANT?} FUNCTION (Name FTakes FReturns)^SYNTAX_ERROR
 FTakes      <-  TAKES^SYNTAX_ERROR 
                 (
