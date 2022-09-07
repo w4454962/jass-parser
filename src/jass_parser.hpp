@@ -2162,18 +2162,19 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		log.error(position(), "ERROR_LOCAL_IN_FUNCTION");
 	};
 
+	peg_parser(config.script, parser);
 
 	//返回的节点必须是 jass 否则代表语法检测失败
-	sol::object res = peg_parser(config.script, parser);
+	//sol::object res = peg_parser(config.script, parser);
 
-	if (res.get_type() != sol::type::userdata) {
-		return false;
-	}
-
-	NodePtr jass = res.as<NodePtr>();
-	if (!jass || jass->type != "jass") {
-		return false;
-	}
+	//if (res.get_type() != sol::type::userdata) {
+	//	return false;
+	//}
+	//
+	//NodePtr jass = res.as<NodePtr>();
+	//if (!jass || jass->type != "jass") {
+	//	return false;
+	//}
 
 	return true;
 }

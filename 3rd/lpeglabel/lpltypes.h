@@ -13,6 +13,7 @@
 #include <limits.h>
 
 #include "lua.h"
+#include "luaconf.h"
 
 
 #define VERSION         "1.6.0"

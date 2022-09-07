@@ -217,12 +217,12 @@ int main(int argn, char** argv) {
 	init_config();
 
 	
+	clock_t start = clock();
 
 	sol::state* lua = new sol::state();
 
 	lua->open_libraries();
 
-	lua->require("ffi", luaopen_ffi);
 	lua->require("lpeglabel", luaopen_lpeglabel);
 
 	lua->require_script("relabel", relabel_script, false, "relabel");
@@ -234,7 +234,6 @@ int main(int argn, char** argv) {
 
 	fs::path path = fs::current_path() / "war3" / "24";
 
-	clock_t start = clock();
 
 	ParseResult* result = new ParseResult();
 
@@ -244,20 +243,17 @@ int main(int argn, char** argv) {
 
 	double mem_end = (*lua)["collectgarbage"]("count");
 
-	(*lua)["collectgarbage"]("collect");
-
-	double mem_end2 = (*lua)["collectgarbage"]("count");
-
 	//check_script(lua, fs::current_path() / "tests" / "aa.j", *result);
 
 	std::cout << "lua memory start " << mem_start / 1024 << " mb" << std::endl;
 	std::cout << "lua memory end " << mem_end / 1024 << " mb" << std::endl;
-	std::cout << "lua memory end2 " << mem_end2 / 1024 << " mb" << std::endl;
-
-	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
 	delete lua;
 	lua = nullptr;
+
+	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
+
+;
 	
 	return 0;
 }

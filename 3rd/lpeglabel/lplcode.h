@@ -6,6 +6,7 @@
 #define lplcode_h
 
 #include "lua.h"
+#include "luaconf.h"
 
 #include "lpltypes.h"
 #include "lpltree.h"

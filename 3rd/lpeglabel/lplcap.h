@@ -7,7 +7,7 @@
 
 
 #include "lpltypes.h"
-
+#include "luaconf.h"
 
 /* kinds of captures */
 typedef enum CapKind {
