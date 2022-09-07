@@ -18,8 +18,8 @@ Chunk       <-  (   Type
 Function    <-  FDef -> FunctionStart Nl^MISS_NL
                 (
                     FLocals
-                    {|Actions|}
-                ) -> FunctionBody
+                    Actions
+                )  -> FunctionBody
                 FEnd -> FunctionEnd
 FDef        <-  {CONSTANT?} FUNCTION (Name FTakes FReturns)^SYNTAX_ERROR
 FTakes      <-  TAKES^SYNTAX_ERROR 
@@ -35,10 +35,7 @@ FEnd        <-  (ENDFUNCTION Ed^MISS_NL)?
 
 
 
-Native      <-  (
-                    {} -> Point
-                    {CONSTANT?} NATIVE Name NTakes NReturns
-                )
+Native      <-  ( {CONSTANT?} NATIVE Name NTakes NReturns )
             ->  Native
 NTakes      <-  TAKES
                 (
@@ -52,12 +49,8 @@ NReturns    <-  RETURNS^SYNTAX_ERROR Name
 
 Actions     <-  (Nl / Action)*
 
-Action      <-  (
-                {} -> Point
-                (ACall / ASet / AReturn / AExit / ALogic / ALoop / AError)
-            )
-        ->  Action
-
+Action      <- (ACall / ASet / AReturn / AExit / ALogic / ALoop / AError)
+         
 
 -- Are you kidding me Blizzard?
 ACall       <-  (DEBUG? CALL Name^SYNTAX_ERROR PL ACallArgs? PR^ERROR_MISS_PR)

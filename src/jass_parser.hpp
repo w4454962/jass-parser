@@ -157,13 +157,44 @@ struct Container
 };
 
 
+enum class NodeType
+{
+	NONE,
+	VAR,
+	EXP,
+	EXP_VALUE,
+	EXP_VAR,
+	EXP_VARI,
+	EXP_NEG,
+	EXP_BINRAY,
+	EXP_UNARY,
+	EXP_CALL,
+	ACTION,
+	ACTION_CALL,
+	ACTION_SET,
+	ACTION_SETINDEX,
+	ACTION_RETURN,
+	ACTION_EXITWHEN,
+	IF,
+	ACTION_IF,
+	ACTION_LOOP,
+	TYPE,
+	VAR_ARG,
+	VAR_LOCAL,
+	VAR_GLOBAL,
+	GLOBALS,
+	NATIVE,
+	FUNCTION,
+	JASS,
+};
+
 typedef std::function<bool(NodePtr node, size_t branch_index)> NodeFilter;
 
 
 struct Node {
-	string_t type = "none";
+	NodeType type = NodeType::NONE;
 
-	virtual const string_t get_type (){  return type; }
+	virtual const NodeType get_type (){  return type; }
 	virtual bool each_childs(const NodeFilter& filter) { return 0; }
 	virtual size_t get_childs_size() { return 0; }
 	virtual bool add_child(NodePtr node) { return 0; }
@@ -178,7 +209,7 @@ struct VarBaseNode : Node {
 	bool has_set;
 
 	VarBaseNode() {
-		type = "var";
+		type = NodeType::VAR;
 		has_set = false;
 	}
 };
@@ -188,14 +219,14 @@ struct ExpNode: Node {
 	gc_string_t vtype = "nothing";
 
 	ExpNode() {
-		type = "exp";
+		type = NodeType::EXP;
 	}
 };
 
 struct ExpValue : ExpNode {
 
 	ExpValue() {
-		type = "exp_value";
+		type = NodeType::EXP_VALUE;
 	}
 
 };
@@ -263,7 +294,7 @@ struct ExpVar :ExpNode {
 	ExpVar(VarPtr& var_)
 		:var(var_)
 	{
-		type = "exp_var";
+		type = NodeType::EXP_VAR;
 		vtype = var->vtype;
 	}
 };
@@ -277,7 +308,7 @@ struct ExpVari : ExpNode {
 		:var(var_),
 		index(index_)
 	{
-		type = "exp_vari";
+		type = NodeType::EXP_VARI;
 		vtype = var->vtype;
 	}
 };
@@ -288,7 +319,7 @@ struct ExpNeg : ExpNode {
 	ExpNeg(ExpPtr& exp_)
 		: exp(exp_)
 	{
-		type = "exp_neg";
+		type = NodeType::EXP_NEG;
 		vtype = exp_->vtype;;
 	}
 };
@@ -306,7 +337,7 @@ struct ExpBinary : ExpNode {
 		first(first_),
 		second(second_)
 	{
-		type = "exp_binary";
+		type = NodeType::EXP_BINRAY;
 		vtype = vtype_;
 	}
 };
@@ -319,7 +350,7 @@ struct ExpUnary :ExpNode {
 		: op(op_),
 		first(first_)
 	{
-		type = "exp_unary";
+		type = NodeType::EXP_UNARY;
 		vtype = vtype_;
 	}
 };
@@ -334,7 +365,7 @@ struct ExpCall : ExpNode {
 	ExpCall(const string_t& func_name_, const string_t& func_return_type)
 		: name(func_name_)
 	{
-		type = "exp_call";
+		type = NodeType::EXP_CALL;
 		vtype = func_return_type;
 		is_action = false;
 	}
@@ -347,7 +378,7 @@ struct ActionNode :Node {
 	bool has_return;
 	
 	ActionNode() {
-		type = "action";
+		type = NodeType::ACTION;
 		has_return = false;
 	}
 
@@ -359,7 +390,7 @@ struct ActionCall :ActionNode {
 	ActionCall(std::shared_ptr<ExpCall>& call_)
 		:call(call_)
 	{
-		type = "action_call";
+		type = NodeType::ACTION_CALL;
 	}
 };
 
@@ -372,7 +403,7 @@ struct ActionSet : ActionNode {
 		: name(name_),
 		exp(exp_)
 	{
-		type = "action_set";
+		type = NodeType::ACTION_SET;
 	}
 };
 
@@ -387,7 +418,7 @@ struct ActionSetIndex : ActionNode {
 		index(index_),
 		exp(exp_)
 	{
-		type = "action_setarray";
+		type = NodeType::ACTION_SETINDEX;
 	}
 };
 
@@ -397,7 +428,7 @@ struct ActionReturn : ActionNode {
 	ActionReturn(ExpPtr exp_) 
 		:value(exp_)
 	{
-		type = "action_return";
+		type = NodeType::ACTION_RETURN;
 		has_return = true;
 	}
 };
@@ -408,7 +439,7 @@ struct ActionExit : ActionNode {
 	ActionExit(ExpPtr exp_)
 		:exp(exp_)
 	{
-		type = "action_exitwhen";
+		type = NodeType::ACTION_EXITWHEN;
 	}
 };
 
@@ -431,7 +462,7 @@ struct IfNode : ActionNode {
 		file(file_),
 		line(line_)
 	{
-		type = "if";
+		type = NodeType::IF;
 	}
 
 	virtual bool each_childs(const NodeFilter& filter) override {
@@ -457,7 +488,7 @@ struct ActionIf : ActionNode {
 	std::vector<std::shared_ptr<IfNode>> if_nodes;
 
 	ActionIf() {
-		type = "action_if";
+		type = NodeType::ACTION_IF;
 	}
 
 	virtual bool each_childs(const NodeFilter& filter) override {
@@ -493,7 +524,7 @@ struct ActionLoop :ActionNode {
 	ActionLoop(size_t endline_)
 		:endline(endline_)
 	{
-		type = "action_loop";
+		type = NodeType::ACTION_LOOP;
 	}
 
 	virtual bool each_childs(const NodeFilter& filter) override {
@@ -530,7 +561,7 @@ struct TypeNode : Node {
 		file(file_),
 		line(line_)
 	{ 
-		type = "type";
+		type = NodeType::TYPE;
 	}
 };
 
@@ -542,7 +573,7 @@ struct ArgNode : VarBaseNode {
 	{ 
 		vtype = type_;
 		name = name_;
-		type = "var_arg";
+		type = NodeType::VAR_ARG;
 		has_set = true;
 	}
 };
@@ -562,7 +593,7 @@ struct LocalNode : VarBaseNode {
 	{
 		vtype = type_;
 		name = name_;
-		type = "var_local";
+		type = NodeType::VAR_LOCAL;
 	}
 };
 
@@ -573,7 +604,7 @@ struct GlobalNode : LocalNode {
 	GlobalNode(bool constant, const string_t& type_, const string_t& name_, bool is_array_, const string_t& file_, size_t line_)
 		: LocalNode(type_, name_, is_array_, file_, line_)
 	{
-		type = "var_global";
+		type = NodeType::VAR_GLOBAL;
 		is_const = constant;
 	}
 };
@@ -583,7 +614,7 @@ struct GlobalsNode : Node {
 	Container<GlobalNode>* globals;
 
 	GlobalsNode() {
-		type = "globals";
+		type = NodeType::GLOBALS;
 		globals = nullptr;
 	}
 
@@ -622,7 +653,7 @@ struct NativeNode : Node {
 		file(file_),
 		line(line_)
 	{
-		type = "native";
+		type = NodeType::NATIVE;
 	}
 };
 
@@ -636,7 +667,7 @@ struct FunctionNode : NativeNode {
 	FunctionNode(bool is_const_, const string_t& name_, const string_t& returns_, const string_t& file_, size_t line_)
 		: NativeNode(is_const_, name_, returns_, file_, line_)
 	{
-		type = "function";
+		type = NodeType::FUNCTION;
 		has_return_any = false;
 	}
 
@@ -685,7 +716,7 @@ struct Jass : Node {
 		: gc(gc_),
 		file(file_)
 	{
-		type = "jass";
+		type = NodeType::JASS;
 
 
 		//基础数据类型
@@ -848,7 +879,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (!config.exploit)
 			return;
 
-		if (!var || var->type == "var_arg") 
+		if (!var || var->type == NodeType::VAR_ARG)
 			return ;
 		auto local = CastNode<LocalNode>(var);
 
@@ -973,7 +1004,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 					auto& exp = call->params[i];
 					if (!is_extends(exp->vtype, arg->vtype)) {
 						log.error(position(), "ERROR_WRONG_ARG", func->name, i + 1, arg->vtype, exp->vtype);
-						if (exp->type == "exp_var") {
+						if (exp->type == NodeType::EXP_VAR) {
 							auto exp_var = CastNode<ExpVar>(exp);
 							append_expolit_warning(exp_var->var);
 						}
@@ -1027,12 +1058,12 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		var->has_set = true;
 
 		if (need_array) {
-			if (var->type == "var_arg" || !CastNode<LocalNode>(var)->is_array) {
+			if (var->type == NodeType::VAR_ARG || !CastNode<LocalNode>(var)->is_array) {
 				log.error(position(), "ERROR_WASTE_INDEX", name);
 				append_expolit_warning(var);
 			}
 		} else {
-			if (var->type != "var_arg" && CastNode<LocalNode>(var)->is_array) {
+			if (var->type != NodeType::VAR_ARG && CastNode<LocalNode>(var)->is_array) {
 				log.error(position(), "ERROR_NO_INDEX", name);
 				append_expolit_warning(var);
 			}
@@ -1045,10 +1076,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		if (has_function) {
 			auto func = functions.back();
-			if (func && var->type == "var_global" && CastNode<GlobalNode>(var)->is_const) {
+			if (func && var->type == NodeType::VAR_GLOBAL && CastNode<GlobalNode>(var)->is_const) {
 				log.error(position(), "ERROR_SET_CONSTANT", name);
 			}
-			else if (func && func->is_const && var->type == "var_global") {
+			else if (func && func->is_const && var->type == NodeType::VAR_GLOBAL) {
 				log.error(position(), "ERROR_SET_IN_CONSTANT", name);
 			}
 		}
@@ -1066,12 +1097,12 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		auto& name = var->name;
 
 		if (need_array) {
-			if (var->type == "var_arg" || !CastNode<LocalNode>(var)->is_array ) {
+			if (var->type == NodeType::VAR_ARG || !CastNode<LocalNode>(var)->is_array ) {
 				log.error(position(), "ERROR_WASTE_INDEX", name);
 				append_expolit_warning(var);
 			}
 		} else {
-			if (var->type != "var_arg" && CastNode<LocalNode>(var)->is_array) {
+			if (var->type != NodeType::VAR_ARG && CastNode<LocalNode>(var)->is_array) {
 				log.error(position(), "ERROR_NO_INDEX", name);
 				append_expolit_warning(var);
 			}
@@ -1578,7 +1609,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 
 		if (exp) {
-			if (exp->type == "exp_call") {
+			if (exp->type == NodeType::EXP_CALL) {
 				auto call = CastNode<ExpCall>(exp);
 
 				auto func = get_function(call->name);
@@ -1676,7 +1707,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			} 
 			auto func = functions.back();
 			
-			if (func && exp->type == "exp_call") { // 局部变量的初始值不能递归自己
+			if (func && exp->type == NodeType::EXP_CALL) { // 局部变量的初始值不能递归自己
 				auto call = CastNode<ExpCall>(exp);
 				if (func->name == call->name) {
 					log.error(position(), "ERROR_LOCAL_RECURSION");
@@ -1694,27 +1725,6 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		//return loc;
 	};
 
-
-
-	parser["Point"] = [&]() {
-		sol::variadic_results res;
-
-		res.push_back(sol::make_object(lua, file));
-		res.push_back(sol::make_object(lua, linecount));
-
-		return res;
-	};
-
-	parser["Action"] = [&](const string_t& file, size_t line, std::optional<NodePtr> node) {
-
-		if (node.has_value()) {
-			auto action = CastNode<ActionNode>(node.value());
-
-			block_add_node(action);
-		}
-
-		//return action;
-	};
 
 
 	parser["ACall"] = [&](const string_t& name, sol::variadic_args args) {
@@ -1810,7 +1820,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			auto& t2 = exp->vtype;
 			VarPtr var;
 
-			if (exp->type == "exp_var") {
+			if (exp->type == NodeType::EXP_VAR) {
 				auto exp_var = CastNode<ExpVar>(exp);
 				var = exp_var->var;
 			}
@@ -1831,7 +1841,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				log.error(position(), "ERROR_MISS_RETURN", func->name, t2);
 			}
 			
-			if (func->is_const && exp->type == "exp_var" && !CastNode<ExpVar>(exp)->var->has_set) {
+			if (func->is_const && exp->type == NodeType::EXP_VAR && !CastNode<ExpVar>(exp)->var->has_set) {
 				log.warning(position(), "ERROR_CONSTANT_UNINIT", func->name);
 			}
 
@@ -2022,8 +2032,6 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 	parser["Native"] = [&](
-		const string_t& file,
-		size_t line, 
 		std::optional<sol::object> constant,
 		const string_t& name,
 		std::optional<sol::object> takes_,
@@ -2035,7 +2043,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		bool is_const = constant.has_value() && !constant.value().as<string_t>().empty();
 
-		auto native = std::make_shared<NativeNode>(is_const, name, returns, file, line);
+		auto native = std::make_shared<NativeNode>(is_const, name, returns, file, linecount);
 
 
 		if (takes_.has_value() && takes_.value().get_type() == sol::type::table) {
@@ -2105,7 +2113,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return (NodePtr)func;
 	};
 
-	parser["FunctionBody"] = [&](sol::object locals) {
+	parser["FunctionBody"] = [&]() {
 		auto func = functions.back();
 
 		bool has_return = false;
@@ -2184,7 +2192,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	}
 	
 	NodePtr jass = res.value();
-	if (!jass || jass->type != "jass") {
+	if (!jass || jass->type != NodeType::JASS) {
 		return false;
 	}
 
