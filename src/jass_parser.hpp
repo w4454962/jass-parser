@@ -1679,7 +1679,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 		
 
-		return loc;
+		//return loc;
 	};
 
 
@@ -1935,14 +1935,15 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		block_add_node(else_node);
 	};
 
-	parser["Logic"] = [&](sol::lua_table ifelse, sol::object endif) {
+	parser["Logic"] = [&](sol::object endif) {
+
+		auto action_if = CastNode<ActionIf>(block_stack.back());
 
 		if (endif.get_type() == sol::type::nil) {
-			auto if_node = CastNode<IfNode>(ifelse[1]);
+			auto if_node = action_if->if_nodes[0];
 			log.error(position(), "ERROR_ENDIF", if_node->line);
 		}
 
-		auto action_if = CastNode<ActionIf>(block_stack.back());
 
 		bool has_return = true;
 		bool has_else = false;
@@ -1977,7 +1978,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return linecount;
 	};
 
-	parser["Loop"] = [&](size_t line, sol::lua_table chunks, sol::object endloop) {
+	parser["Loop"] = [&](size_t line, sol::object endloop) {
 		if (endloop.get_type() == sol::type::nil) {
 			log.error(position(), "ERROR_ENDLOOP", line);
 		}
@@ -2092,7 +2093,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return (NodePtr)func;
 	};
 
-	parser["FunctionBody"] = [&](sol::object locals, sol::lua_table actions) {
+	parser["FunctionBody"] = [&](sol::object locals) {
 		auto func = functions.back();
 
 		bool has_return = false;

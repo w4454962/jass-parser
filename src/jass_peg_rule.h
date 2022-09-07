@@ -18,7 +18,7 @@ Chunk       <-  (   Type
 Function    <-  FDef -> FunctionStart Nl^MISS_NL
                 (
                     FLocals
-                    {|Actions|}
+                    Actions
                 ) -> FunctionBody
                 FEnd -> FunctionEnd
 
@@ -75,36 +75,36 @@ ARExp       <-  Ed  -> Return
 AExit       <-  EXITWHEN Exp
         ->  Exit
 
-ALogic      <-  ({|
+ALogic      <-  (
                 LIf
                 LElseif*
                 LElse?
-            |}
+            
             LEnd)
         ->  Logic
 LIf         <-  (
                 {} -> IfStart
                 IF (Exp THEN)^ERROR_MISS_THEN Nl^MISS_NL
-                    (Actions)
+                    Actions
             )
         ->  If
 LElseif     <-  (
                 {} -> ElseifStart
                 ELSEIF (Exp THEN)^ERROR_MISS_THEN Nl^MISS_NL
-                    (Actions)
+                    Actions
             )
         ->  Elseif
 LElse       <-  (
                 {} -> ElseStart
                 ELSE Nl^MISS_NL
-                    (Actions)
+                    Actions
             )
         ->  Else
 LEnd        <-  ({ENDIF} Ed^MISS_NL)?
 
 ALoop       <-  (
                 LOOP -> LoopStart Nl^MISS_NL
-                    {|Actions|}
+                    Actions
                 ({ENDLOOP} Ed^MISS_NL)?
             )
         ->  Loop

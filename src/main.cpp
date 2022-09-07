@@ -216,7 +216,7 @@ int main(int argn, char** argv) {
 
 	init_config();
 
-	clock_t start = clock();
+	
 
 	sol::state* lua = new sol::state();
 
@@ -230,9 +230,11 @@ int main(int argn, char** argv) {
 
 	//tests(lua, fs::path(argv[1]));
 
-
+	double mem_start = (*lua)["collectgarbage"]("count");
 
 	fs::path path = fs::current_path() / "war3" / "24";
+
+	clock_t start = clock();
 
 	ParseResult* result = new ParseResult();
 
@@ -240,13 +242,22 @@ int main(int argn, char** argv) {
 	check_script(*lua, path / "blizzard.j", *result);
 	check_script(*lua, path / "war3map.j", *result); 
 
+	double mem_end = (*lua)["collectgarbage"]("count");
+
+	(*lua)["collectgarbage"]("collect");
+
+	double mem_end2 = (*lua)["collectgarbage"]("count");
+
 	//check_script(lua, fs::current_path() / "tests" / "aa.j", *result);
 
-	delete lua;
-	lua = nullptr;
+	std::cout << "lua memory start " << mem_start / 1024 << " mb" << std::endl;
+	std::cout << "lua memory end " << mem_end / 1024 << " mb" << std::endl;
+	std::cout << "lua memory end2 " << mem_end2 / 1024 << " mb" << std::endl;
 
 	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
+	delete lua;
+	lua = nullptr;
 	
 	return 0;
 }
