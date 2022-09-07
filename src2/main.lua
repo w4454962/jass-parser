@@ -34,6 +34,8 @@ function io.append(path, str)
     end 
 end 
 
+local clock = os.clock()
+
 local parser = require 'parser'
 
 local dump = require 'dump'
@@ -53,7 +55,7 @@ local ast
 
 lpeglabel.setmaxstack(8192)
 
-local clock = os.clock()
+
 
 --语法解析
 ast = parser.parser(common, 'common.j',   option)

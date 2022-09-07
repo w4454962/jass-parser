@@ -6,6 +6,8 @@ std::string_view convert_message(std::string_view msg);
 
 int num = 0;
 
+int create_count = 0;
+int delete_count = 0;
 
 typedef std::shared_ptr<struct Node> NodePtr;
 typedef std::shared_ptr<struct VarBaseNode> VarPtr;
@@ -19,6 +21,44 @@ inline auto CastNode(const T& v) {
 
 using string_t = std::string_view;
 
+
+
+template< typename Type >
+struct Container
+{
+	typedef std::shared_ptr<Type> object_ptr;
+
+	std::vector<object_ptr> list;
+	std::unordered_map <string_t, size_t> map;
+
+	bool save(const string_t& name, const object_ptr& obj) {
+		if (map.find(name) != map.end()) {
+			return false;
+		}
+		size_t back_index = list.size();
+		list.emplace_back(obj);
+
+		using gc_string_t = class gc_string_t;
+
+		map.emplace(gc_string_t(name), back_index);
+		return true;
+	}
+
+	object_ptr find(const string_t& name) {
+		auto it = map.find(name);
+		if (it == map.end()) {
+			return nullptr;
+		}
+		return list[it->second];
+	}
+
+	object_ptr back() {
+		if (list.empty()) {
+			return nullptr;
+		}
+		return list.back();
+	}
+};
 
 template<typename Key, typename Type>
 struct NodeContainer
@@ -36,10 +76,11 @@ struct NodeContainer
 	}
 
 	object_ptr find(const Key& key) {
-		if (map.find(key) == map.end()) {
+		auto it = map.find(key);
+		if (it == map.end()) {
 			return nullptr;
 		}
-		return map.at(key);
+		return it->second;
 	}
 };
 
@@ -89,11 +130,11 @@ struct Cache {
 
 		auto it = string_map.find(s);
 		if (it != string_map.end()) {
-			result = std::string_view(*it->second);
+			result = *it->second;
 		} else {
 			//std::cout << "cache {" << s << "}\n";
 			auto ptr = std::make_shared<std::string>(s);
-			result = std::string_view(*ptr);
+			result = *ptr;
 			string_map.emplace(result, ptr);
 		}
 		return result;
@@ -124,37 +165,6 @@ public:
 };
 
 
-template< typename Type >
-struct Container
-{
-	typedef std::shared_ptr<Type> object_ptr;
-
-	std::vector<object_ptr> list;
-	std::unordered_map <string_t, object_ptr> map;
-
-	bool save(const string_t& name, const object_ptr& obj) {
-		if (map.find(name) != map.end()) {
-			return false;
-		}
-		list.emplace_back(obj);
-		map.emplace(gc_string_t(name), obj);
-		return true;
-	}
-
-	object_ptr find(const string_t& name) {
-		if (map.find(name) == map.end()) {
-			return nullptr;
-		}
-		return map.at(name);
-	}
-
-	object_ptr back() {
-		if (list.empty()) {
-			return object_ptr();
-		}
-		return list.back();
-	}
-};
 
 
 enum class NodeType
@@ -824,7 +834,7 @@ std::set<string_t> keywords = {
 
 bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result) {
 
-	lua_State* L = lua.lua_state();
+	clock_t start = clock();
 
 	sol::function peg_parser = lua.require_file("peg", "peg");
 
@@ -946,8 +956,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 	auto is_extends = [&](const gc_string_t& type_name, const gc_string_t& parent_name) {
-		auto type = types.find(std::string(type_name));
-		auto parent = types.find(std::string(parent_name));
+		auto type = types.find(type_name);
+		auto parent = types.find(parent_name);
 
 		if (!type || !parent) {
 			return true;
@@ -956,7 +966,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (type->name == parent->name) {
 			return true;
 		}
-		return parent->childs.find(std::string(type_name)) != parent->childs.end();
+		return parent->childs.find(type_name) != parent->childs.end();
 	};
 
 	auto get_function = [&](const string_t& name) {
@@ -1181,7 +1191,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return first->name == second->name;
 	};
 
-	auto get_two_exp_type = [&](ExpPtr& first, const string_t& op, ExpPtr& second) {
+	auto get_binary_exp_type = [&](ExpPtr& first, const string_t& op, ExpPtr& second) {
 		uint32_t byte = 0;
 		for (auto c : op) { 
 			byte = (byte << 8) | c; 
@@ -1295,7 +1305,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 
-	auto block_add_node = [&](NodePtr node) {
+	auto block_add_node = [&](const NodePtr& node) {
 		if (block_stack.empty()) {
 			return;
 		}
@@ -1306,13 +1316,15 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	};
 
 	auto lua_nil_table = lua.create_table();
+	{
+		auto mt = lua.create_table();
+		lua_nil_table[sol::metatable_key] = mt;
 
-	auto mt = lua.create_table();
-	lua_nil_table[sol::metatable_key] = mt;
-
-	mt["__tostring"] = []() {
-		return "<null>";
-	};
+		mt["__tostring"] = []() {
+			return "<null>";
+		};
+	}
+	
 
 	parser["Nil"] = [&]() {
 		return lua_nil_table;
@@ -1445,8 +1457,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 		auto call = std::make_shared<ExpCall>(func->name, func->returns);
 
+		call->params.resize(args.size());
+		size_t i = 0;
 		for (auto v : args) {
-			call->params.emplace_back(CastNode<ExpNode>(v));
+			call->params[i++] = CastNode<ExpNode>(v);
 		}
 
 		check_call(func, call);
@@ -1510,9 +1524,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		auto first = CastNode<ExpNode>(args[0]);
 
 		for (size_t i = 1; i < args.size(); i += 2) {
-			std::string op = args[i];
+			const std::string& op = args[i];
 			auto second = CastNode<ExpNode>(args[i + 1]);
-			auto exp_type = get_two_exp_type(first, op, second);
+			auto exp_type = get_binary_exp_type(first, op, second);
 			first = std::make_shared<ExpBinary>(exp_type, first, op, second);
 		}
 
@@ -1528,7 +1542,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		auto first = CastNode<ExpNode>(args[backend]);
 
 		for (size_t i = backend - 1; i > 0; i--) {
-			std::string op = args[i];
+			const std::string& op = args[i];
 			string_t exp_type = "boolean";
 			if (op == "not" && first->vtype != "boolean") {
 				log.error(position(), "ERROR_NOT_TYPE");
@@ -1608,31 +1622,29 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			}
 		}
 
-		if (exp) {
-			if (exp->type == NodeType::EXP_CALL) {
-				auto call = CastNode<ExpCall>(exp);
+		if (exp && exp->type == NodeType::EXP_CALL) {
 
-				auto func = get_function(call->name);
+			auto call = CastNode<ExpCall>(exp);
 
-				switch (hash_s(call->name))
-				{
-				case "OrderId"s_hash:
-				case "OrderId2String"s_hash:
-				case "UnitId2String"s_hash:
-					//这几个会返回null 
-					log.warning(position(), "WARNING_NULL_NATIVE_IN_GLOBAL", call->name);
-					break;
-				case "GetObjectName"s_hash:
-				case "CreateQuest"s_hash:
-				case "CreateMultiboard"s_hash:
-				case "CreateLeaderboard"s_hash:
-					//这几个会崩溃
-					log.warning(position(), "WARNING_CRASH_NATIVE_IN_GLOBAL", call->name);
-					break;
-				default:
-					break;
-				}
+			switch (hash_s(call->name))
+			{
+			case "OrderId"s_hash:
+			case "OrderId2String"s_hash:
+			case "UnitId2String"s_hash:
+				//这几个会返回null 
+				log.warning(position(), "WARNING_NULL_NATIVE_IN_GLOBAL", call->name);
+				break;
+			case "GetObjectName"s_hash:
+			case "CreateQuest"s_hash:
+			case "CreateMultiboard"s_hash:
+			case "CreateLeaderboard"s_hash:
+				//这几个会崩溃
+				log.warning(position(), "WARNING_CRASH_NATIVE_IN_GLOBAL", call->name);
+				break;
+			default:
+				break;
 			}
+
 		}
 
 		auto global = std::make_shared<GlobalNode>(is_const, type, name, is_array, file, linecount);
@@ -1735,7 +1747,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			log.error(position(), "ERROR_CALL_IN_CONSTANT", name);
 		}
 
-		std::string exp_type = "nothing";
+		string_t exp_type = "nothing";
 		if (func) {
 			exp_type = func->returns;
 		}
@@ -1743,12 +1755,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		auto call = std::make_shared<ExpCall>(name, exp_type);
 
 		call->is_action = true;
-
+		call->params.resize(args.size());
+		size_t i = 0;
 		for (auto v : args) {
-			if (v.get_type() != sol::type::nil) {
-				call->params.emplace_back(CastNode<ExpNode>(v));
-			}
-
+			call->params[i++] = CastNode<ExpNode>(v);
 		}
 
 		if (func) {
@@ -2052,8 +2062,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 
 ;			for (size_t i = 0; i < takes.size(); i += 2) {
-				const std::string type = takes[i + 1];
-				const std::string name = takes[i + 2];
+				const std::string& type = takes[i + 1];
+				const std::string& name = takes[i + 2];
 
 				auto arg = std::make_shared<ArgNode>(type, name);
 
@@ -2182,10 +2192,11 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		log.error(position(), "ERROR_LOCAL_IN_FUNCTION");
 	};
 
-
+	
 	//返回的节点必须是 jass 否则代表语法检测失败
 	std::optional<NodePtr> res = peg_parser(jass_peg_rule, config.script, parser);
 
+	std::cout << "1time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
 	if (!res.has_value()) {
 		return false;

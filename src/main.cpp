@@ -170,7 +170,7 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 }
 
 
-void check_script(sol::state& lua, const fs::path file, ParseResult& result) {
+void check_script(sol::state& lua, const fs::path& file, ParseResult& result) {
 	ParseConfig config;
 
 	config.file = file.filename().string();
@@ -259,14 +259,12 @@ int main(int argn, char** argv) {
 	lua.open_libraries(sol::lib::jit);
 
 	//lua["jit"]["on"](true);
-	//lua["jit"]["opt"]["start"](3);
+	lua["jit"]["opt"]["start"](3);
 
 	lua.require("lpeglabel", luaopen_lpeglabel);
 	
 	lua.require_script("relabel", relabel_script, false, "relabel");
 	lua.require_script("peg", peg_script, false, "peg");
-
-
 
 
 	//tests(lua, fs::path(argv[1]));
@@ -276,7 +274,7 @@ int main(int argn, char** argv) {
 	//delete lua;
 	//lua = nullptr;
 ;
-	//lua.require_file("main", (fs::current_path() / "src2" / "main.lua").string());
+	lua.require_file("main", (fs::current_path() / "src2" / "main.lua").string());
 	
 	return 0;
 }
