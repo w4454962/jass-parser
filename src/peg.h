@@ -9,15 +9,15 @@ local m = require 'lpeglabel'
 
 local parser
 
---local defs = setmetatable({}, {__index = function (self, key)
---    self[key] = function (...)
---        if parser[key] then
---            --print(key,select("#", ...), ...)
---            return parser[key](...)
---        end
---    end
---    return self[key]
---end})
+local defs = setmetatable({}, {__index = function (self, key)
+    self[key] = function (...)
+        if parser[key] then
+            print(key,select("#", ...), ...)
+            return parser[key](...)
+        end
+    end
+    return self[key]
+end})
 local defs = {}
 
 
@@ -30,6 +30,7 @@ return function (peg_script, jass, parser_)
             defs[k] = v
         end 
     end 
+
     defs.nl = (m.P'\r\n' + m.S'\r\n') / (parser.nl or function () end)
     defs.Fail = function() return false end
     defs.True = m.Cc(true)
@@ -54,6 +55,7 @@ return function (peg_script, jass, parser_)
             return nil, err
         end
     end
+
     return r
 end 
  
