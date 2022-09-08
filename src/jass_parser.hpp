@@ -2040,96 +2040,120 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		block_add_node(loop);
 	};
 
-	
-	parser["NArgs"] = [&](sol::object takes) {
-		return takes;
-	};
 
-	parser["FArgs"] = [&](sol::object takes) {
-		return takes;
-	};
-
-	parser["Native"] = [&](
-		std::optional<sol::object> constant,
-		const string_t& name,
-		std::optional<sol::object> takes_,
-		const string_t returns
-	) {
+	parser["NativeName"] = [&](std::optional<sol::object> constant, const string_t& name) {
 		check_name(name);
 		check_new_name(name);
-		check_type(returns);
 
 		bool is_const = constant.has_value() && !constant.value().as<string_t>().empty();
 
-		auto native = std::make_shared<NativeNode>(is_const, name, returns, file, linecount);
-
-
-		if (takes_.has_value() && takes_.value().get_type() == sol::type::table) {
-			
-			sol::lua_table takes = takes_.value().as<sol::lua_table>();
-
-
-;			for (size_t i = 0; i < takes.size(); i += 2) {
-				const std::string& type = takes[i + 1];
-				const std::string& name = takes[i + 2];
-
-				auto arg = std::make_shared<ArgNode>(type, name);
-
-				auto var = globals.find(name);
-				if (var) {
-					log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
-				}
-				if (!types.find(type)) {
-					log.error(position(), "ERROR_UNDEFINE_TYPE", type);
-				}
-				native->args.save(name, arg);
-			}
-		}
-		
+		auto native = std::make_shared<NativeNode>(is_const, name, "", file, linecount);
 
 		natives.save(name, native);
 
+	};
+
+	parser["NArg"] = [&](const string_t& type, const string_t& name) {
+
+		auto native = natives.back();
+
+		auto arg = std::make_shared<ArgNode>(type, name);
+
+		auto var = globals.find(name);
+		if (var) {
+			log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+		}
+		if (!types.find(type)) {
+			log.error(position(), "ERROR_UNDEFINE_TYPE", type);
+		}
+		native->args.save(name, arg);
+	};
+
+	parser["NativeReturns"] = [&](const string_t& returns) {
+		check_type(returns);
+
+		auto native = natives.back();
+
+		native->returns = returns;
+	};
+	parser["Native"] = [&]() {
+		auto native = natives.back();
 		return (NodePtr)native;
 	};
 
-
-
-	parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, std::optional<sol::lua_table> takes_, const string_t& returns) {
+	parser["FunctionName"] = [&](const string_t& constant, const string_t& name) {
 		check_name(name);
 		check_new_name(name);
-		check_type(returns);
+
 
 		bool is_const = !constant.empty();
 
-		auto func = std::make_shared<FunctionNode>(is_const, name, returns, file, linecount);
+		auto func = std::make_shared<FunctionNode>(is_const, name, "", file, linecount);
 
-		if (takes_.has_value()) {
-			auto& takes = takes_.value();
-			for (size_t i = 0; i < takes.size(); i += 2) {
-				const std::string& type = takes[i + 1];
-				const std::string& name = takes[i + 2];
-
-				auto arg = std::make_shared<ArgNode>(type, name);
-
-				auto var = globals.find(name);
-				if (var) {
-					log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
-				}
-				if (!types.find(type)) {
-					log.error(position(), "ERROR_UNDEFINE_TYPE", type);
-				}
-				func->args.save(name, arg);
-			}
-		}
-		
-		
 		has_function = true;
 		functions.save(name, func);
 
 		block_stack.emplace_back(func);
-
-		return (NodePtr)func;
 	};
+
+	parser["FArg"] = [&](const string_t& type, const string_t& name) {
+		auto func = functions.back();
+
+		auto arg = std::make_shared<ArgNode>(type, name);
+
+		auto var = globals.find(name);
+		if (var) {
+			log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+		}
+		if (!types.find(type)) {
+			log.error(position(), "ERROR_UNDEFINE_TYPE", type);
+		}
+		func->args.save(name, arg);
+	};
+
+	parser["FunctionReturns"] = [&](const string_t& returns) {
+		check_type(returns);
+
+		auto func = functions.back();
+		func->returns = returns;
+	};
+
+	//parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, std::optional<sol::lua_table> takes_, const string_t& returns) {
+	//	check_name(name);
+	//	check_new_name(name);
+	//	check_type(returns);
+	//
+	//	bool is_const = !constant.empty();
+	//
+	//	auto func = std::make_shared<FunctionNode>(is_const, name, returns, file, linecount);
+	//
+	//	if (takes_.has_value()) {
+	//		auto& takes = takes_.value();
+	//		for (size_t i = 0; i < takes.size(); i += 2) {
+	//			const std::string& type = takes[i + 1];
+	//			const std::string& name = takes[i + 2];
+	//
+	//			auto arg = std::make_shared<ArgNode>(type, name);
+	//
+	//			auto var = globals.find(name);
+	//			if (var) {
+	//				log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
+	//			}
+	//			if (!types.find(type)) {
+	//				log.error(position(), "ERROR_UNDEFINE_TYPE", type);
+	//			}
+	//			func->args.save(name, arg);
+	//		}
+	//	}
+	//	
+	//	
+	//	has_function = true;
+	//	functions.save(name, func);
+	//
+	//	block_stack.emplace_back(func);
+	//
+	//	return (NodePtr)func;
+	//};
 
 	parser["FunctionBody"] = [&]() {
 		auto func = functions.back();

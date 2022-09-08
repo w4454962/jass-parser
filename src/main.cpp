@@ -215,7 +215,6 @@ void check_script(sol::state& lua, const fs::path& file, ParseResult& result) {
 
 void check(sol::state& lua) {
 
-
 	clock_t start = clock();
 	double mem_start = lua["collectgarbage"]("count");
 
@@ -267,7 +266,7 @@ int main(int argn, char** argv) {
 	lua.require("lpeglabel", luaopen_lpeglabel);
 	
 	lua.require_script("relabel", relabel_script, false, "relabel");
-	lua.require_script("peg", peg_script, false, "peg");
+	lua.require_script("peg", peg_script, false, "peg"); 
 
 	
 	//tests(lua, fs::path(argv[1]));

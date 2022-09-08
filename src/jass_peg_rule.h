@@ -15,34 +15,44 @@ Chunk       <-  (   Type
             ->  Chunk
 
 
-Function    <-  FDef -> FunctionStart Nl^MISS_NL
+Function    <-  FDef Nl^MISS_NL
                 (
                     FLocals
                     Actions
                 )  -> FunctionBody
                 FEnd -> FunctionEnd
-FDef        <-  {CONSTANT?} FUNCTION (Name FTakes FReturns)^SYNTAX_ERROR
-FTakes      <-  TAKES^SYNTAX_ERROR 
-                (
-                    NOTHING -> Nil
-                /   {|NArg (COMMA NArg)*|} -> FArgs
+FDef        <-  (
+                    ({CONSTANT?} FUNCTION  Name TAKES^SYNTAX_ERROR) -> FunctionName
+                    FTakes 
+                    (FReturns) -> FunctionReturns
+                )
+
+FTakes      <-  (
+                    NOTHING
+                /   (FArg (COMMA FArg)*)
                 /   Sp %{SYNTAX_ERROR}
                 )
-FArg        <-  Name Name
+FArg        <-  (Name Name) -> FArg 
+
 FReturns    <-  RETURNS^SYNTAX_ERROR Name
-FLocals     <-  {|Locals|} / {} -> Nil
+FLocals     <-  {Locals} / {} -> Nil
 FEnd        <-  (ENDFUNCTION Ed^MISS_NL)?
 
 
 
-Native      <-  ( {CONSTANT?} NATIVE Name NTakes NReturns )
-            ->  Native
-NTakes      <-  TAKES
-                (
-                    NOTHING -> Nil
-                /   {|NArg (COMMA NArg)*|} -> NArgs
+Native      <-  ( 
+                    ({CONSTANT?} NATIVE Name TAKES^SYNTAX_ERROR) -> NativeName
+                     NTakes 
+                    (NReturns) -> NativeReturns
                 )
-NArg        <-  Name Name
+                -> Native
+
+NTakes      <-  (
+                    NOTHING
+                /   (NArg (COMMA NArg)*)
+                )
+
+NArg        <-  (Name Name) -> NArg
 NReturns    <-  RETURNS^SYNTAX_ERROR Name
 
 
