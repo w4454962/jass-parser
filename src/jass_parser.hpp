@@ -194,7 +194,6 @@ enum class NodeType
 	VAR_ARG,
 	VAR_LOCAL,
 	VAR_GLOBAL,
-	GLOBALS,
 	NATIVE,
 	FUNCTION,
 	JASS,
@@ -625,33 +624,6 @@ struct GlobalNode : LocalNode {
 	}
 };
 
-struct GlobalsNode : Node {
-
-	Container<GlobalNode>* globals;
-
-	GlobalsNode() {
-		type = NodeType::GLOBALS;
-		globals = nullptr;
-	}
-
-	virtual bool each_childs(const NodeFilter& filter) override {
-		if (!globals) 
-			return 0;
-
-		size_t brnch_index = 0;
-		for (auto& global : globals->list) {
-			if (filter(global, brnch_index))  
-				return 1;
-		}
-
-		return 0;
-	}
-
-	virtual size_t get_childs_size() override {
-		if (!globals) return 0;
-		return globals->list.size();
-	}
-};
 
 
 struct NativeNode : Node {
@@ -1581,7 +1553,6 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				parent = parent->parent;
 			}
 		}
-		return (NodePtr)type;
 	};
 
 	size_t globals_start_line = 0;
@@ -1593,16 +1564,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	parser["GlobalsEnd"] = [&](const string_t& str) {
 		if (str.length() == 0) {
 			log.error(position(), "ERROR_ENDGLOBALS", globals_start_line);
-		}
+		};
 	};
 
-	parser["Globals"] = [&]() {
-		
-		auto gs = std::make_shared<GlobalsNode>();
-		gs->globals = &globals;
-
-		return (NodePtr)gs;
-	};
 
 	parser["Global"] = [&](const string_t& constant, const string_t& type, const string_t& array, const string_t& name, std::optional<NodePtr> lexp) {
 		NodePtr exp;
@@ -2076,10 +2040,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		native->returns = returns;
 	};
-	parser["Native"] = [&]() {
-		auto native = natives.back();
-		return (NodePtr)native;
-	};
+
 
 	parser["FunctionName"] = [&](const string_t& constant, const string_t& name) {
 		check_name(name);
@@ -2118,42 +2079,6 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		func->returns = returns;
 	};
 
-	//parser["FunctionStart"] = [&](const string_t& constant, const string_t& name, std::optional<sol::lua_table> takes_, const string_t& returns) {
-	//	check_name(name);
-	//	check_new_name(name);
-	//	check_type(returns);
-	//
-	//	bool is_const = !constant.empty();
-	//
-	//	auto func = std::make_shared<FunctionNode>(is_const, name, returns, file, linecount);
-	//
-	//	if (takes_.has_value()) {
-	//		auto& takes = takes_.value();
-	//		for (size_t i = 0; i < takes.size(); i += 2) {
-	//			const std::string& type = takes[i + 1];
-	//			const std::string& name = takes[i + 2];
-	//
-	//			auto arg = std::make_shared<ArgNode>(type, name);
-	//
-	//			auto var = globals.find(name);
-	//			if (var) {
-	//				log.error(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
-	//			}
-	//			if (!types.find(type)) {
-	//				log.error(position(), "ERROR_UNDEFINE_TYPE", type);
-	//			}
-	//			func->args.save(name, arg);
-	//		}
-	//	}
-	//	
-	//	
-	//	has_function = true;
-	//	functions.save(name, func);
-	//
-	//	block_stack.emplace_back(func);
-	//
-	//	return (NodePtr)func;
-	//};
 
 	parser["FunctionBody"] = [&]() {
 		auto func = functions.back();
@@ -2186,18 +2111,13 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 
 		block_stack.pop_back();
-
-		return (NodePtr)func;
 	};
 
 
-	parser["Jass"] = [&](sol::object jass) {
+	parser["Jass"] = [&]() {
 		return (NodePtr)result.jass;
 	};
 
-	parser["Chunk"] = [](NodePtr chunk) {
-		return chunk;
-	};
 
 
 	parser["returnAsReturns"] = [&]() {

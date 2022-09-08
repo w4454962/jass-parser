@@ -2,7 +2,7 @@
 
 static const char jass_peg_rule[] = R"(
 
-Jass        <-  {| (Nl / Chunk)* |} ->Jass
+Jass        <-  ((Nl / Chunk)*) {} -> Jass
                  Sp        
                 
 Chunk       <-  (   Type
@@ -12,7 +12,7 @@ Chunk       <-  (   Type
                 -- 错误收集
                 /   Action %{ERROR_ACTION_IN_CHUNK}
                 )
-            ->  Chunk
+       
 
 
 Function    <-  FDef Nl^MISS_NL
@@ -45,7 +45,7 @@ Native      <-  (
                      NTakes 
                     (NReturns) -> NativeReturns
                 )
-                -> Native
+         
 
 NTakes      <-  (
                     NOTHING
@@ -118,7 +118,7 @@ AError      <-  LOCAL Ignore
 
 
 Globals     <-  GLOBALS -> GlobalsStart Nl^MISS_NL
-                    { (Nl / Global)* } -> Globals
+                     ((Nl / Global)*)
                 {(ENDGLOBALS Ed^MISS_NL)?} -> GlobalsEnd
 Global      <-  !GLOBALS !FUNCTION !NATIVE
                 ({CONSTANT?} Name {ARRAY?} Name (ASSIGN Exp)?)
