@@ -90,7 +90,65 @@ void init_config() {
 //
 //}
 
+void test_file(sol::state& lua, const fs::path& file) {
 
+	std::ifstream stream(file, std::ios::binary);
+
+	ParseConfig config;
+
+	config.file = file.filename().string();
+
+	config.script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+
+	ParseResult result;
+	bool success = jass_parser(lua, config, result);
+
+	std::string src = file.string();
+
+	fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
+
+	if (!fs::exists(path)) {
+		path = std::regex_replace(src, std::regex("\\.j"), ".warn");
+	}
+
+	if (result.log.errors.size() == 0) {
+		if (!success) {
+			std::cout << src << "\t fail" << std::endl;
+			return;
+		}
+		else {
+			std::cout << src << "\tpass" << std::endl;
+		}
+	}
+
+	if (result.log.errors.size() > 0) {
+		std::cout << src << "\t error" << std::endl;
+
+		for (auto v : result.log.errors) {
+			std::cout << "[error]<" << v->message << ">" << std::endl;
+		}
+	}
+	if (result.log.warnings.size() > 0) {
+		for (auto v : result.log.warnings) {
+			std::cout << "[warning]<" << v->message << ">" << std::endl;
+		}
+	}
+
+	std::ifstream f(path, std::ios::binary);
+	if (f.is_open()) {
+
+		std::string file_str = std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+
+		std::cout << "[error]{" << file_str << "}" << std::endl;
+
+		f.close();
+	}
+
+
+	stream.close();
+
+	lua["collectgarbage"]("collect");
+}
 
 bool tests(sol::state& lua, const fs::path& tests_path) {
 
@@ -112,58 +170,7 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 
 
 	for (auto& file : paths) {
-		std::ifstream stream(file, std::ios::binary);
-
-		ParseConfig config;
-		
-		config.file = file.filename().string();
-
-		config.script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
-
-		ParseResult result;
-		bool success = jass_parser(lua, config, result);
-
-		 
-		std::string src = file.string();
-
-		fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
-
-		if (!fs::exists(path)) {
-			path = std::regex_replace(src, std::regex("\\.j"), ".warn");
-		}
-
-		if (result.log.errors.size() == 0) {
-			if (!success) {
-				std::cout << src << "\t fail" << std::endl;
-				break;
-			} else {
-				std::cout << src << "\tpass" << std::endl;
-			}
-		} 
-		
-		if (result.log.errors.size() > 0) {
-			std::cout << src << "\t error" << std::endl;
-
-			for (auto v : result.log.errors) {
-				std::cout << "[error]<" << v->message << ">" << std::endl;
-			}
-		}
-		if (result.log.warnings.size() > 0) {
-			for (auto v : result.log.warnings) {
-				std::cout << "[warning]<" << v->message << ">" << std::endl;
-			}
-		}
-
-		std::ifstream file(path, std::ios::binary);
-		if (file.is_open()) {
-
-			std::string file_str = std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-
-			std::cout << "[error]{" << file_str << "}" << std::endl;
-		
-			file.close();
-		}
-		
+		test_file(lua, file);
 	}
 
 	return 1;
@@ -211,6 +218,7 @@ void check_script(sol::state& lua, const fs::path& file, ParseResult& result) {
 
 	stream.close();
 	delete config;
+
 }
 
 void check(sol::state& lua) {

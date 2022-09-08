@@ -18,13 +18,13 @@ local defs = setmetatable({}, {__index = function (self, key)
     end
     return self[key]
 end})
-local defs = {}
 
 
 local eof = re.compile '!. / %{SYNTAX_ERROR}'
 
 return function (peg_script, jass, parser_)
     parser = parser_ or {}
+    local defs = {}
     for k, v in pairs(parser) do 
         if defs[k] == nil then 
             defs[k] = v

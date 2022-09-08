@@ -21,7 +21,9 @@ inline auto CastNode(const T& v) {
 
 using string_t = std::string_view;
 
-
+inline bool string_equal(const string_t& first, const string_t& second) {
+	return (first.data() == second.data() && first.size() == second.size()) || first == second;
+}
 
 template< typename Type >
 struct Container
@@ -700,12 +702,14 @@ struct Jass : Node {
 
 	std::unordered_map<string_t, std::shared_ptr<LocalNode>> exploits;
 
-	Jass(const string_t& file_, std::shared_ptr<Cache>& gc_)
-		: gc(gc_),
-		file(file_)
+	Jass(const string_t& file_)
 	{
+		gc = std::make_shared<Cache>();
+		jass_gc = gc; 
+
 		type = NodeType::JASS;
 
+		file = file_;
 
 		//基础数据类型
 		auto base_list = { "integer", "real", "string", "boolean", "code", "handle", "nothing" };
@@ -720,6 +724,7 @@ struct Jass : Node {
 			}
 		}
 	}
+
 };
 
 
@@ -825,8 +830,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	const string_t& file = config.file;
 
 	if (!result.jass) {
-		jass_gc = std::make_shared<Cache>();
-		result.jass = std::make_shared<Jass>(file, jass_gc);
+		result.jass = std::make_shared<Jass>(file);
 	}
 
 	auto& comments = result.comments;
@@ -836,6 +840,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 	auto& natives = result.jass->natives;
 	auto& exploits = result.jass->exploits;
 	auto& log = result.log;
+
 
 	bool has_function = false; 
 
@@ -940,8 +945,8 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (!type || !parent) {
 			return true;
 		}
-
-		if (type->name == parent->name) {
+		
+		if (string_equal(type->name,parent->name)) {
 			return true;
 		}
 		return parent->childs.find(type_name) != parent->childs.end();
@@ -1154,7 +1159,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		return "";
 	};
 
-	auto is_base_type_eq = [&](const string_t& t1, const string_t& t2) {
+	auto is_base_type_equal = [&](const string_t& t1, const string_t& t2) {
 		auto first = types.find(t1);
 		while (first && first->parent) {
 			first = first->parent;
@@ -1166,7 +1171,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		if (!first || !second) {
 			return false;
 		}
-		return first->name == second->name;
+		return string_equal(first->name, second->name);
 	};
 
 	auto get_binary_exp_type = [&](ExpPtr& first, const string_t& op, ExpPtr& second) {
@@ -1175,10 +1180,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			byte = (byte << 8) | c; 
 		}
 
-		string_t t1, t2, exp_type = "nothing";
+		string_t exp_type = "nothing";
 
-		t1 = first->vtype;
-		t2 = second->vtype;
+		string_t t1 = first->vtype, t2 = second->vtype;
 
 		auto ht1 = hash_s(t1), ht2 = hash_s(t2);
 
@@ -1229,7 +1233,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				exp_type = "boolean";
 			} else if (!get_match_exp_type(ht1, ht2).empty()) {
 				exp_type = "boolean";
-			} else if (is_base_type_eq(t1, t2)) {
+			} else if (is_base_type_equal(t1, t2)) {
 				exp_type = "boolean";
 			} else {
 				log.error(position(), "ERROR_EQUAL", t1, t2);
@@ -2147,13 +2151,15 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 	
 	//返回的节点必须是 jass 否则代表语法检测失败
-	std::optional<NodePtr> res = peg_parser(jass_peg_rule, *config.script, parser);
+	auto res = peg_parser(jass_peg_rule, *config.script, parser);
 
-	if (!res.has_value()) {
+
+
+	if (res.get_type() != sol::type::userdata) {
 		return false;
 	}
 	
-	NodePtr jass = res.value();
+	NodePtr jass = res;
 	if (!jass || jass->type != NodeType::JASS) {
 		return false;
 	}
