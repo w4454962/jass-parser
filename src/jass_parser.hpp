@@ -1131,24 +1131,24 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		}
 	};
 
-	auto get_match_exp_type = [](const string_t& t1, const string_t& t2) {
+	auto get_match_exp_type = [](hash_t ht1, hash_t ht2) {
 		string_t exp_type;
-		if (t1 == "integer") {
-			if (t2 == "integer") {
+		if (ht1 == "integer"s_hash) {
+			if (ht2 == "integer"s_hash) {
 				exp_type = "integer";
-			} else if (t2 == "real") {
+			} else if (ht2 == "real"s_hash) {
 				exp_type = "real";
 			}
-		} else if (t1 == "real") {
-			if (t2 == "integer" || t2 == "real") {
+		} else if (ht1 == "real"s_hash) {
+			if (ht2 == "integer"s_hash || ht2 == "real"s_hash) {
 				exp_type = "real";
 			}
 		}
 		return exp_type;
 	};
 
-	auto get_connect_exp_type = [](const string_t& t1, const string_t& t2) {
-		if ((t1 == "string" || t1 == "null") && (t2 == "string" || t2 == "null")) {
+	auto get_connect_exp_type = [](hash_t ht1, hash_t ht2) {
+		if ((ht1 == "string"s_hash || ht1 == "null"s_hash) && (ht2 == "string"s_hash || ht2 == "null"s_hash)) {
 			return "string";
 		}
 		return "";
@@ -1180,41 +1180,43 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		t1 = first->vtype;
 		t2 = second->vtype;
 
+		auto ht1 = hash_s(t1), ht2 = hash_s(t2);
+
 		switch (byte)
 		{
 		case '+':
-			exp_type = get_match_exp_type(t1, t2); //如果是数字相加
+			exp_type = get_match_exp_type(ht1, ht2); //如果是数字相加
 		
 			if (exp_type.empty()) { //否则 如果是 字符串连接
-				exp_type = get_connect_exp_type(t1, t2);
+				exp_type = get_connect_exp_type(ht1, ht2);
 			}
 			if (exp_type.empty()) {
 				log.error(position(), "ERROR_ADD", t1, t2);
 			}
 			break;
 		case '-':
-			exp_type = get_match_exp_type(t1, t2);
+			exp_type = get_match_exp_type(ht1, ht2);
 			if (exp_type.empty()) {
 				log.error(position(), "ERROR_SUB", t1, t2);
 			}
 			break;
 		
 		case '*':
-			exp_type = get_match_exp_type(t1, t2);
+			exp_type = get_match_exp_type(ht1, ht2);
 			if (exp_type.empty()) {
 				log.error(position(), "ERROR_MUL", t1, t2);
 			}
 			break;
 		
 		case '/':
-			exp_type = get_match_exp_type(t1, t2);
+			exp_type = get_match_exp_type(ht1, ht2);
 			if (exp_type.empty()) {
 				log.error(position(), "ERROR_DIV", t1, t2);
 			}
 			break;
 		
 		case '%':
-			if (t1  == "integer" && t2 == "integer") {
+			if (ht1  == "integer"s_hash && ht2 == "integer"s_hash) {
 				exp_type = t1;
 			} else {
 				log.error(position(), "ERROR_MOD");
@@ -1223,9 +1225,9 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		
 		case '==':
 		case '!=':
-			if (t1 == "null" || t2 == "null") {
+			if (ht1 == "null"s_hash || ht2 == "null"s_hash) {
 				exp_type = "boolean";
-			} else if (!get_match_exp_type(t1, t2).empty()) {
+			} else if (!get_match_exp_type(ht1, ht2).empty()) {
 				exp_type = "boolean";
 			} else if (is_base_type_eq(t1, t2)) {
 				exp_type = "boolean";
@@ -1238,7 +1240,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		case '>=':
 		case '<=':
 		
-			if (!get_match_exp_type(t1, t2).empty()) {
+			if (!get_match_exp_type(ht1, ht2).empty()) {
 				exp_type = "boolean";
 			} else {
 				log.error(position(), "ERROR_COMPARE", t1, t2);
@@ -1246,7 +1248,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			break;
 		case 'and':
 		case 'or':
-			if (t1 == "boolean" && t2 == "boolean") {
+			if (ht1 == "boolean"s_hash && ht2 == "boolean"s_hash) {
 				exp_type = "boolean";
 			} else if (byte == 'and') {
 				log.error(position(), "ERROR_AND", t1, t2);
@@ -1501,7 +1503,6 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		auto first = CastNode<ExpNode>(args[0]);
 
-		size_t p = 0;
 		for (size_t i = 1; i < args.size(); i += 2) {
 			const std::string& op = args[i];
 			auto second = CastNode<ExpNode>(args[i + 1]);
