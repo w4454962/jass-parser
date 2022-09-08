@@ -1,5 +1,5 @@
 ﻿
-
+#include <mimalloc-new-delete.h>
 
 #include "stdafx.h"
 
@@ -118,7 +118,7 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 		
 		config.file = file.filename().string();
 
-		config.script = std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+		config.script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 
 		ParseResult result;
 		bool success = jass_parser(lua, config, result);
@@ -171,19 +171,19 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 
 
 void check_script(sol::state& lua, const fs::path& file, ParseResult& result) {
-	ParseConfig config;
+	ParseConfig* config = new ParseConfig();
 
-	config.file = file.filename().string();
+	config->file = file.filename().string();
 	
 	std::ifstream stream(file, std::ios::binary);
 
-	config.script = std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+	config->script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 
-	bool success = jass_parser(lua, config, result);
-
+	bool success = jass_parser(lua, *config, result);
+	
 	auto& errors = result.log.errors;
 	auto& warnings = result.log.warnings;
-
+	
 	if (errors.size() == 0) {
 		if (!success) {
 			std::cout << file << "\t fail" << std::endl;
@@ -192,22 +192,25 @@ void check_script(sol::state& lua, const fs::path& file, ParseResult& result) {
 			std::cout << file << "\tpass" << std::endl;
 		}
 	}
-
+	
 	if (errors.size() > 0) {
 		std::cout << file << "\t error" << std::endl;
-
+	
 		for (auto v : errors) {
 			std::cout << "[error]<" << v->message << ">" << std::endl;
 			std::cout << "{" << v->at_line << "}" << std::endl;
 		}
 	}
-
+	
 	if (warnings.size() > 0) {
 		for (auto v : warnings) {
 			std::cout << "[warning]<" << v->message << ">" << std::endl;
 			std::cout << "{" << v->at_line << "}" << std::endl;
 		}
 	}
+
+	stream.close();
+	delete config;
 }
 
 void check(sol::state& lua) {
@@ -266,7 +269,7 @@ int main(int argn, char** argv) {
 	lua.require_script("relabel", relabel_script, false, "relabel");
 	lua.require_script("peg", peg_script, false, "peg");
 
-
+	
 	//tests(lua, fs::path(argv[1]));
 
 	check(lua);

@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include "stdafx.h"
 #include "jass_peg_rule.h"
-
+#include "mimalloc.h"
 std::string_view convert_message(std::string_view msg);
 
 int num = 0;
@@ -43,6 +43,7 @@ struct Container
 		map.emplace(gc_string_t(name), back_index);
 		return true;
 	}
+
 
 	object_ptr find(const string_t& name) {
 		auto it = map.find(name);
@@ -120,12 +121,13 @@ struct Cache {
 	NodeContainer<int, struct ExpIntegerValue> integer_nodes;
 	NodeContainer<string_t, struct ExpCodeValue> code_nodes;
 
-	NodeContainer<VarPtr, ExpNode> var_nodes;
+	NodeContainer<void*, ExpNode> var_nodes;
 
 	std::unordered_map<std::string_view, std::shared_ptr<std::string>> string_map;
 
 
-	std::string_view string(const std::string_view& s) {
+	template<typename T>
+	std::string_view string(const T& s) {
 		std::string_view result;
 
 		auto it = string_map.find(s);
@@ -341,6 +343,10 @@ struct ExpBinary : ExpNode {
 
 	ExpPtr first;
 	ExpPtr second;
+
+	ExpBinary() {
+		type = NodeType::EXP_BINRAY;
+	}
 
 	ExpBinary(const string_t& vtype_, ExpPtr& first_, const string_t& op_, ExpPtr& second_)
 		: op(op_),
@@ -801,7 +807,7 @@ struct ParseLog {
 
 struct ParseConfig {
 	std::string file;
-	std::string script;
+	std::shared_ptr<std::string> script;
 
 	bool rb;		//双返回值漏洞
 	bool exploit;	//局部变量修改全局变量漏洞
@@ -869,7 +875,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 		msg->file = file;
 		msg->line = linecount;
 		msg->column = -1;
-		msg->at_line = relabel["line"](config.script, linecount);
+		msg->at_line = relabel["line"](*config.script, linecount);
 
 		return msg;
 	};
@@ -1493,10 +1499,10 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 			return NodePtr();
 		}
 
-		auto exp_var = jass_gc->var_nodes.find(var);
+		auto exp_var = jass_gc->var_nodes.find(var.get());
 		if (!exp_var) {
 			exp_var = std::make_shared<ExpVar>(var);
-			jass_gc->var_nodes.save(var, exp_var);
+			jass_gc->var_nodes.save(var.get(), exp_var);
 		}
 
 		return (NodePtr)exp_var;
@@ -1523,6 +1529,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 		auto first = CastNode<ExpNode>(args[0]);
 
+		size_t p = 0;
 		for (size_t i = 1; i < args.size(); i += 2) {
 			const std::string& op = args[i];
 			auto second = CastNode<ExpNode>(args[i + 1]);
@@ -1548,6 +1555,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 				log.error(position(), "ERROR_NOT_TYPE");
 			}
 			first = std::make_shared<ExpUnary>(exp_type, first, op);
+			num++;
 		}
 
 		return sol::lua_value((NodePtr)first);
@@ -2194,9 +2202,7 @@ bool jass_parser(sol::state& lua, const ParseConfig& config, ParseResult& result
 
 	
 	//返回的节点必须是 jass 否则代表语法检测失败
-	std::optional<NodePtr> res = peg_parser(jass_peg_rule, config.script, parser);
-
-	std::cout << "1time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
+	std::optional<NodePtr> res = peg_parser(jass_peg_rule, *config.script, parser);
 
 	if (!res.has_value()) {
 		return false;

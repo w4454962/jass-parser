@@ -108,7 +108,7 @@ AError      <-  LOCAL Ignore
 
 
 Globals     <-  GLOBALS -> GlobalsStart Nl^MISS_NL
-                    {| (Nl / Global)* |} -> Globals
+                    { (Nl / Global)* } -> Globals
                 {(ENDGLOBALS Ed^MISS_NL)?} -> GlobalsEnd
 Global      <-  !GLOBALS !FUNCTION !NATIVE
                 ({CONSTANT?} Name {ARRAY?} Name (ASSIGN Exp)?)
