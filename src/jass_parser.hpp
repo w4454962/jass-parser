@@ -233,9 +233,7 @@ struct Node {
 
 
 IndexType Cache::node(NodePtr node) {
-	if (!handle_map.find(node->handle)) {
-		handle_map.save(node->handle, node);
-	}
+	handle_map.save(node->handle, node);
 	return node->handle;
 }
 
@@ -942,7 +940,7 @@ private:
 
 		auto node = jass_gc->integer_nodes.find(value);
 		if (node) {
-			return jass_gc->node(node);
+			return node->handle;
 		}
 		node = std::make_shared<ExpIntegerValue>(value);
 		jass_gc->integer_nodes.save(value, node);
@@ -1397,7 +1395,7 @@ private:
 
 		auto node = jass_gc->string_nodes.find(str);
 		if (node) {
-			PushIndex(L, jass_gc->node(node));
+			PushIndex(L, node->handle);
 			return 1;
 		}
 		node = std::make_shared<ExpStringValue>(str);
@@ -1411,18 +1409,16 @@ private:
 		float value = 0.f;
 		try {
 			size_t size = 0;
-			std::string neg(get_string(L, 1));
+			std::string str = std::format("{}{}", get_string(L, 1), get_string(L, 2));
 
-			std::string str(get_string(L, 2));
-
-			value = std::stof(neg + str);
+			value = std::stof(str);
 		}
 		catch (...) {
 
 		}
 		auto node = jass_gc->real_nodes.find(value);
 		if (node) {
-			PushIndex(L, jass_gc->node(node));
+			PushIndex(L, node->handle);
 			return 1;
 		}
 		node = std::make_shared<ExpRealValue>(value);
@@ -1434,40 +1430,31 @@ private:
 
 	static int Integer8(lua_State* L) {
 
-		size_t size = 0;
-		std::string neg(get_string(L, 1));
+		std::string str = std::format("{}{}", get_string(L, 1), get_string(L, 2));
 
-		std::string str(get_string(L, 2));
-
-		PushIndex(L, jass->cast_integer(neg + str, 8));
+		PushIndex(L, jass->cast_integer(str, 8));
 		return 1;
 	}
 
 	static int Integer10(lua_State* L) {
 
-		size_t size = 0;
-		std::string neg(get_string(L, 1));
+		std::string str = std::format("{}{}", get_string(L, 1), get_string(L, 2));
 
-		std::string str(get_string(L, 2));
-
-		PushIndex(L, jass->cast_integer(neg + str, 10));
+		PushIndex(L, jass->cast_integer(str, 10));
 		return 1;
 	}
 
 	static int Integer16(lua_State* L) {
 
-		size_t size = 0;
-		std::string neg(get_string(L, 1));
+		std::string str = std::format("{}{}", get_string(L, 1), get_string(L, 2));
 
-		std::string str(get_string(L, 2));
+		PushIndex(L, jass->cast_integer(str, 16));
 
-		PushIndex(L, jass->cast_integer(neg + str, 16));
 		return 1;
 	}
 
 	static int Integer256(lua_State* L) {
 
-		size_t size = 0;
 		string_t neg(get_string(L, 1));
 
 		string_t str(get_string(L, 2));
@@ -1488,7 +1475,7 @@ private:
 	
 		auto node = jass_gc->integer_nodes.find(i);
 		if (node) {
-			PushIndex(L, jass_gc->node(node));
+			PushIndex(L, node->handle);
 			return 1;
 		}
 		node = std::make_shared<ExpIntegerValue>(i);
@@ -1579,20 +1566,21 @@ private:
 		string_t name(get_string(L, 1));
 
 		auto var = jass->get_variable(name);
-
-		jass->check_get(var, false);
 		if (!var) {
 			PushIndex(L, 0);
 			return 1;
 		}
-	
+
+		jass->check_get(var, false);
+		
 		auto exp_var = jass_gc->var_nodes.find(var.get());
 		if (!exp_var) {
 			exp_var = std::make_shared<ExpVar>(var);
 			jass_gc->var_nodes.save(var.get(), exp_var);
+			jass_gc->node(exp_var);
 		}
 	
-		PushIndex(L, jass_gc->node(exp_var));
+		PushIndex(L, exp_var->handle);
 		return 1;
 	}
 
@@ -1618,11 +1606,9 @@ private:
 		IndexType node = LoadIndex(L, 1);
 		if (lua_gettop(L) > 1) {
 				auto first = CastNode<ExpNode>(jass_gc->node(node));
-				
 				size_t size = lua_gettop(L);
 
 				for (size_t i = 1; i < size; i += 2) {
-					size_t length = 0;
 					const string_t op(get_string(L, i + 1));
 					auto second = CastNode<ExpNode>(jass_gc->node(LoadIndex(L, i + 2)));
 					auto exp_type = jass->get_binary_exp_type(first, op, second);
@@ -1659,9 +1645,9 @@ private:
 	}
 
 	static string_t get_string(lua_State* L, size_t index) {
-		if (!lua_isstring(L, index)) {
-			return string_t();
-		}
+		//if (!lua_isstring(L, index)) {
+		//	return string_t();
+		//}
 		size_t size = 0;
 		const char* ptr = lua_tolstring(L, index, &size);
 		return string_t(ptr, size);
