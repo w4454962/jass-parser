@@ -2,8 +2,8 @@
 
 static const char jass_peg_rule[] = R"(
 
-Jass        <-  ((Nl / Chunk)*) {} -> Jass
-                 Sp        
+Jass        <-  ((Nl / Chunk)*)  Sp  {} -> Jass
+                       
                 
 Chunk       <-  (   Type
                 /   Globals

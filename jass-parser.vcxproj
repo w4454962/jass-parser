@@ -110,7 +110,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions);;SOL_USE_LUAJIT</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>.\;src\;3rd\;3rd\pegtl\include;3rd\luajit\src\;3rd\sol</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\;src\;3rd\;3rd\pegtl\include;3rd\luajit\src\;3rd\sol;3rd\mimalloc\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>

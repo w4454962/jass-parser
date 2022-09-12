@@ -1,4 +1,4 @@
-﻿
+﻿#include <Windows.h>
 #include <mimalloc-new-delete.h>
 
 #include "stdafx.h"
@@ -100,8 +100,9 @@ void test_file(sol::state& lua, const fs::path& file) {
 
 	config.script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 
-	ParseResult result;
-	bool success = jass_parser(lua, config, result);
+	auto jass = std::make_shared<Jass>();
+
+	bool success = 0;// jass_parser(lua, config, jass);
 
 	std::string src = file.string();
 
@@ -111,7 +112,7 @@ void test_file(sol::state& lua, const fs::path& file) {
 		path = std::regex_replace(src, std::regex("\\.j"), ".warn");
 	}
 
-	if (result.log.errors.size() == 0) {
+	if (jass->log.errors.size() == 0) {
 		if (!success) {
 			std::cout << src << "\t fail" << std::endl;
 			return;
@@ -121,15 +122,15 @@ void test_file(sol::state& lua, const fs::path& file) {
 		}
 	}
 
-	if (result.log.errors.size() > 0) {
+	if (jass->log.errors.size() > 0) {
 		std::cout << src << "\t error" << std::endl;
 
-		for (auto v : result.log.errors) {
+		for (auto v : jass->log.errors) {
 			std::cout << "[error]<" << v->message << ">" << std::endl;
 		}
 	}
-	if (result.log.warnings.size() > 0) {
-		for (auto v : result.log.warnings) {
+	if (jass->log.warnings.size() > 0) {
+		for (auto v : jass->log.warnings) {
 			std::cout << "[warning]<" << v->message << ">" << std::endl;
 		}
 	}
@@ -177,7 +178,7 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 }
 
 
-void check_script(sol::state& lua, const fs::path& file, ParseResult& result) {
+void check_script(sol::state& lua, const fs::path& file, std::shared_ptr<Jass> jass) {
 	ParseConfig* config = new ParseConfig();
 
 	config->file = file.filename().string();
@@ -186,10 +187,10 @@ void check_script(sol::state& lua, const fs::path& file, ParseResult& result) {
 
 	config->script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 
-	bool success = jass_parser(lua, *config, result);
+	bool success = jass->run(*config);
 	
-	auto& errors = result.log.errors;
-	auto& warnings = result.log.warnings;
+	auto& errors = jass->log.errors;
+	auto& warnings = jass->log.warnings;
 	
 	if (errors.size() == 0) {
 		if (!success) {
@@ -229,11 +230,13 @@ void check(sol::state& lua) {
 	fs::path path = fs::current_path() / "war3" / "24";
 
 
-	ParseResult* result = new ParseResult();
+	auto jass = std::make_shared<Jass>();
 
-	check_script(lua, path / "common.j", *result);
-	check_script(lua, path / "blizzard.j", *result);
-	check_script(lua, path / "war3map.j", *result); 
+	jass->init(lua.lua_state());
+
+	check_script(lua, path / "common.j", jass);
+	check_script(lua, path / "blizzard.j", jass);
+	check_script(lua, path / "war3map.j", jass);
 
 
 	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
@@ -255,6 +258,12 @@ void check(sol::state& lua) {
 }
 
 
+int test(lua_State* L) {
+
+	return 0;
+}
+
+
 int main(int argn, char** argv) {
 
 	std::locale::global(std::locale("zh_CN.UTF-8"));
@@ -263,6 +272,10 @@ int main(int argn, char** argv) {
 
 
 	sol::state lua;
+
+	lua_State* L = lua.lua_state();
+
+
 
 	lua.open_libraries();
 
@@ -274,16 +287,57 @@ int main(int argn, char** argv) {
 	lua.require("lpeglabel", luaopen_lpeglabel);
 	
 	lua.require_script("relabel", relabel_script, false, "relabel");
-	lua.require_script("peg", peg_script, false, "peg"); 
 
-	
-	//tests(lua, fs::path(argv[1]));
+	lua["timer_start"] = []() {
+		uint64_t begin_time;
+		QueryPerformanceCounter((LARGE_INTEGER*)&begin_time);
+		return begin_time;
+	};
+
+	auto get_time = [](uint64_t time) {
+		LARGE_INTEGER litmp;
+		QueryPerformanceFrequency(&litmp); //获取频率
+		double time_fre = (double)litmp.QuadPart;
+		double time_elapsed = (double)time / time_fre;
+		return time_elapsed;
+	};
+
+	lua.require_script("peg", peg_script, false, "peg");
+
+	//auto tbl = lua.create_table();
+	//
+	//lua["tbl"] = tbl;
+	//
+	//tbl["test"] = [](lua_State* L)->int {
+	//	lua_Number node = lua_tonumber(L, 1);
+	//	lua_pushnumber(L, node);
+	//
+	//	return 1;
+	//};
+	//
+	//clock_t start = clock();
+
+	//lua.script("for i = 0, 8000000 do tbl.test(i, i, i, i) end");
+
+
+	//std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
 	check(lua);
-
+	
 	//delete lua;
 	//lua = nullptr;
-;
+	
+	sol::lua_table res = lua["timer_map"];
+	
+	std::cout << "Binary " << get_time(num) << std::endl;
+	
+	std::ofstream file("out.txt", std::ios::binary);
+	file << "name\ttime" << std::endl;
+	for (auto v : res) {
+		file << v.first.as<std::string>() << "\t" << get_time(v.second.as<uint64_t>()) << std::endl;
+	}
+	file.close()
+;	
 	lua.require_file("main", (fs::current_path() / "src2" / "main.lua").string());
 	
 	return 0;

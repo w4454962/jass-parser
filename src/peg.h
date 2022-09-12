@@ -9,15 +9,36 @@ local m = require 'lpeglabel'
 
 local parser
 
+timer_map = {}
+
+
 local defs = setmetatable({}, {__index = function (self, key)
     self[key] = function (...)
         if parser[key] then
-            print(key,select("#", ...), ...)
-            return parser[key](...)
+            --print(key,select("#", ...), ...)
+
+            local func = parser[key]
+            
+            local start = timer_start();
+            
+            local ret1, ret2 = func(...)
+            
+            local clock = timer_start()
+            
+            timer_map[key] = (timer_map[key] or 0) + (clock - start)
+
+            if ret2 then 
+                return ret1, ret2
+            elseif ret1 then 
+                return ret1
+            end 
+            --return parser[key](...)
         end
     end
     return self[key]
 end})
+
+
 
 
 local eof = re.compile '!. / %{SYNTAX_ERROR}'
@@ -30,6 +51,20 @@ return function (peg_script, jass, parser_)
             defs[k] = v
         end 
     end 
+    --local Binary = parser["Binary"]
+    --defs["Binary"] = function (...)
+    --    if select("#", ...) == 1 then 
+    --        return ...  
+    --    end 
+    --    return Binary(...)
+    --end 
+    --local Unary = parser["Unary"]
+    --defs["Unary"] = function (...)
+    --    if select("#", ...) == 1 then 
+    --        return ...  
+    --    end 
+    --    return Unary(...)
+    --end 
 
     defs.nl = (m.P'\r\n' + m.S'\r\n') / (parser.nl or function () end)
     defs.Fail = function() return false end
@@ -55,7 +90,6 @@ return function (peg_script, jass, parser_)
             return nil, err
         end
     end
-
     return r
 end 
  
