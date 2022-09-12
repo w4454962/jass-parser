@@ -10,7 +10,7 @@ local m = require 'lpeglabel'
 local parser
 
 timer_map = {}
-
+count_map = {}
 
 local defs = setmetatable({}, {__index = function (self, key)
     self[key] = function (...)
@@ -26,7 +26,7 @@ local defs = setmetatable({}, {__index = function (self, key)
             local clock = timer_start()
             
             timer_map[key] = (timer_map[key] or 0) + (clock - start)
-
+            count_map[key] = (count_map[key] or 0) + 1
             if ret1 then 
                 return ret1
             end 
@@ -43,26 +43,13 @@ local eof = re.compile '!. / %{SYNTAX_ERROR}'
 
 return function (peg_script, jass, parser_)
     parser = parser_ or {}
-    --local defs = {}
-    --for k, v in pairs(parser) do 
-    --    if defs[k] == nil then 
-    --        defs[k] = v
-    --    end 
-    --end 
-    --local Binary = parser["Binary"]
-    --defs["Binary"] = function (...)
-    --    if select("#", ...) == 1 then 
-    --        return ...  
-    --    end 
-    --    return Binary(...)
-    --end 
-    --local Unary = parser["Unary"]
-    --defs["Unary"] = function (...)
-    --    if select("#", ...) == 1 then 
-    --        return ...  
-    --    end 
-    --    return Unary(...)
-    --end 
+    local defs = {}
+    for k, v in pairs(parser) do 
+        if defs[k] == nil then 
+            defs[k] = v
+        end 
+    end 
+   
 
     defs.nl = (m.P'\r\n' + m.S'\r\n') / (parser.nl or function () end)
     defs.Fail = function() return false end

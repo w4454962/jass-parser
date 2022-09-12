@@ -224,11 +224,11 @@ void check_script(sol::state& lua, const fs::path& file, std::shared_ptr<Jass> j
 
 void check(sol::state& lua) {
 
-	clock_t start = clock();
 	double mem_start = lua["collectgarbage"]("count");
 
 	fs::path path = fs::current_path() / "war3" / "24";
 
+	clock_t start = clock();
 
 	auto jass = std::make_shared<Jass>();
 
@@ -288,11 +288,14 @@ int main(int argn, char** argv) {
 	
 	lua.require_script("relabel", relabel_script, false, "relabel");
 
-	lua["timer_start"] = []() {
+	lua_register(L, "timer_start", [](lua_State* L)->int {
 		uint64_t begin_time;
 		QueryPerformanceCounter((LARGE_INTEGER*)&begin_time);
-		return begin_time;
-	};
+
+		lua_pushinteger(L, begin_time);
+		return 1;
+	});
+	
 
 	auto get_time = [](uint64_t time) {
 		LARGE_INTEGER litmp;
@@ -332,9 +335,16 @@ int main(int argn, char** argv) {
 	std::cout << "Binary " << num << std::endl;
 	
 	std::ofstream file("out.txt", std::ios::binary);
-	file << "name\ttime" << std::endl;
+	file << "name\ttime\tcount" << std::endl;
 	for (auto v : res) {
-		file << v.first.as<std::string>() << "\t" << get_time(v.second.as<uint64_t>()) << std::endl;
+		auto key = v.first.as<std::string>();
+		double time = get_time(v.second.as<uint64_t>());
+		int count = lua["count_map"][key].get<int>();
+
+		char data[0x100];
+
+		sprintf(data, "%s\t%.06f\t%i", key.c_str(), time, count);
+		file << data << std::endl;
 	}
 	file.close()
 ;	

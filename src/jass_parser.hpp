@@ -496,7 +496,7 @@ struct IfNode : ActionNode {
 		ELSE
 	};
 
-	string_t file;
+	gc_string_t file;
 	size_t line;
 	TYPE iftype;
 	ExpPtr condition;
@@ -598,7 +598,7 @@ struct TypeNode : Node {
 	size_t line;
 	gc_string_t name;
 	std::shared_ptr<TypeNode> parent;
-	std::set<gc_string_t> childs;
+	std::unordered_set<string_t> childs;
 
 	TypeNode(const string_t& name_, std::shared_ptr<TypeNode> parent_, const string_t& file_, size_t line_)
 		: name(name_),
@@ -664,10 +664,9 @@ struct NativeNode : Node {
 	gc_string_t returns;
 	Container<ArgNode> args;
 
-	NativeNode(bool is_const_, const string_t& name_, const string_t& returns_, const string_t& file_, size_t line_)
+	NativeNode(bool is_const_, const string_t& name_, const string_t& file_, size_t line_)
 		: is_const(is_const_),
 		name(name_),
-		returns(returns_),
 		file(file_),
 		line(line_)
 	{
@@ -682,8 +681,8 @@ struct FunctionNode : NativeNode {
 
 	bool has_return_any;
 
-	FunctionNode(bool is_const_, const string_t& name_, const string_t& returns_, const string_t& file_, size_t line_)
-		: NativeNode(is_const_, name_, returns_, file_, line_)
+	FunctionNode(bool is_const_, const string_t& name_, const string_t& file_, size_t line_)
+		: NativeNode(is_const_, name_, file_, line_)
 	{
 		type = NodeType::FUNCTION;
 		has_return_any = false;
@@ -809,7 +808,7 @@ public:
 	ParseLog log;
 
 
-	std::set<string_t> keywords = {
+	std::unordered_set<string_t> keywords = {
 		"globals", "endglobals", "constant", "native", "array", "and",
 		"or", "not", "type", "extends", "function", "endfunction", "nothing",
 		"takes", "returns", "call", "set", "return", "if", "then", "endif", "elseif",
@@ -1017,9 +1016,9 @@ private:
 
 		std::shared_ptr<NativeNode> func;
 
-		func = natives.find(name);
+		func = functions.find(name);
 		if (!func) {
-			func = functions.find(name);
+			func = natives.find(name);
 			if (!func) {
 				log.error(position(), "FUNCTION_NO_EXISTS", name);
 			}
@@ -1170,12 +1169,10 @@ private:
 		if (ht1 == "integer"s_hash) {
 			if (ht2 == "integer"s_hash) {
 				exp_type = "integer";
-			}
-			else if (ht2 == "real"s_hash) {
+			} else if (ht2 == "real"s_hash) {
 				exp_type = "real";
 			}
-		}
-		else if (ht1 == "real"s_hash) {
+		} else if (ht1 == "real"s_hash) {
 			if (ht2 == "integer"s_hash || ht2 == "real"s_hash) {
 				exp_type = "real";
 			}
@@ -1327,8 +1324,7 @@ private:
 
 		if (is_array && !var->is_array) {
 			log.error(position(), "ERROR_REDEFINE_ARRAY_WITH_GLOBAL", name, var->file, var->line);
-		}
-		else {
+		} else {
 			log.warning(position(), "ERROR_REDEFINE_GLOBAL", name, var->file, var->line);
 		}
 	};
@@ -1515,7 +1511,6 @@ private:
 	}
 	
 	static int ECall(lua_State* L) {
-		size_t size = 0;
 		string_t name(get_string(L, 1));
 
 		auto func = jass->get_function(name);
@@ -1541,7 +1536,6 @@ private:
 	}
 
 	static int Vari(lua_State* L) {
-		size_t size = 0;
 		string_t name(get_string(L, 1));
 
 		IndexType index = LoadIndex(L, 2);
@@ -1562,7 +1556,6 @@ private:
 	}
 
 	static int Var(lua_State* L) {
-		size_t size = 0;
 		string_t name(get_string(L, 1));
 
 		auto var = jass->get_variable(name);
@@ -1655,7 +1648,6 @@ private:
 
 
 	static int Type(lua_State* L) {
-		size_t size = 0;
 		string_t name(get_string(L, 1));
 		string_t extends(get_string(L, 2));
 
@@ -1675,7 +1667,7 @@ private:
 			}
 
 			while (parent) {
-				parent->childs.emplace(name);
+				parent->childs.emplace(jass_gc->string(name));
 				parent = parent->parent;
 			}
 		}
@@ -1689,7 +1681,6 @@ private:
 	}
 
 	static int GlobalsEnd(lua_State* L) {
-		size_t size = 0;
 		string_t str(get_string(L, 1));
 
 		if (str.size() == 0) {
@@ -1699,7 +1690,6 @@ private:
 	}
 
 	static int Global(lua_State* L) {
-		size_t size = 0;
 		string_t constant(get_string(L, 1));
 		string_t type(get_string(L, 2));
 		string_t array(get_string(L, 3));
@@ -1767,7 +1757,6 @@ private:
 	}
 
 	static int LocalDef(lua_State* L) {
-		size_t size = 0;
 		string_t type(get_string(L, 1));
 		string_t array(get_string(L, 2));
 		string_t name(get_string(L, 3));
@@ -1848,7 +1837,7 @@ private:
 		auto func = jass->get_function(name);
 		auto current = jass->functions.back();
 	
-		if (!func && current && current->is_const && !func->is_const) {
+		if (func && current && current->is_const && !func->is_const) {
 			jass->log.error(jass->position(), "ERROR_CALL_IN_CONSTANT", name);
 		}
 	
@@ -1881,7 +1870,6 @@ private:
 	}
 
 	static int Set(lua_State* L) {
-		size_t size = 0;
 		string_t name(get_string(L, 1));
 
 		auto var = jass->get_variable(name);
@@ -2165,7 +2153,7 @@ private:
 		jass->check_name(name);
 		jass->check_new_name(name);
 
-		auto native = std::make_shared<NativeNode>(is_const, name, "", jass->file, jass->linecount);
+		auto native = std::make_shared<NativeNode>(is_const, name, jass->file, jass->linecount);
 
 		jass->natives.save(name, native);
 
@@ -2222,7 +2210,7 @@ private:
 
 		bool is_const = !constant.empty();
 
-		auto func = std::make_shared<FunctionNode>(is_const, name, "", jass->file, jass->linecount);
+		auto func = std::make_shared<FunctionNode>(is_const, name, jass->file, jass->linecount);
 
 		jass->has_function = true;
 		jass->functions.save(name, func);
