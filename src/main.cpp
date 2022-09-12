@@ -329,7 +329,7 @@ int main(int argn, char** argv) {
 	
 	sol::lua_table res = lua["timer_map"];
 	
-	std::cout << "Binary " << get_time(num) << std::endl;
+	std::cout << "Binary " << num << std::endl;
 	
 	std::ofstream file("out.txt", std::ios::binary);
 	file << "name\ttime" << std::endl;

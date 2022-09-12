@@ -21,15 +21,13 @@ local defs = setmetatable({}, {__index = function (self, key)
             
             local start = timer_start();
             
-            local ret1, ret2 = func(...)
+            local ret1 = func(...)
             
             local clock = timer_start()
             
             timer_map[key] = (timer_map[key] or 0) + (clock - start)
 
-            if ret2 then 
-                return ret1, ret2
-            elseif ret1 then 
+            if ret1 then 
                 return ret1
             end 
             --return parser[key](...)
@@ -45,12 +43,12 @@ local eof = re.compile '!. / %{SYNTAX_ERROR}'
 
 return function (peg_script, jass, parser_)
     parser = parser_ or {}
-    local defs = {}
-    for k, v in pairs(parser) do 
-        if defs[k] == nil then 
-            defs[k] = v
-        end 
-    end 
+    --local defs = {}
+    --for k, v in pairs(parser) do 
+    --    if defs[k] == nil then 
+    --        defs[k] = v
+    --    end 
+    --end 
     --local Binary = parser["Binary"]
     --defs["Binary"] = function (...)
     --    if select("#", ...) == 1 then 
