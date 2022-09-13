@@ -130,6 +130,10 @@ struct Cache {
 	NodeContainer<void*, ExpNode> var_nodes;
 
 
+	NodeContainer<string_t, struct Node> name2ecall;
+	NodeContainer<string_t, struct Node> name2acall;
+
+
 	NodeContainer<IndexType, struct Node> handle_map;
 	
 
@@ -1142,23 +1146,19 @@ private:
 	};
 
 	auto check_get(VarPtr& var, bool need_array) {
-		if (!var) return;
-
-		auto& name = var->name;
 
 		if (need_array) {
 			if (var->type == NodeType::VAR_ARG || !CastNode<LocalNode>(var)->is_array) {
-				log.error(position(), "ERROR_WASTE_INDEX", name);
+				log.error(position(), "ERROR_WASTE_INDEX", var->name);
 				append_expolit_warning(var);
 			}
-		}
-		else {
+		} else {
 			if (var->type != NodeType::VAR_ARG && CastNode<LocalNode>(var)->is_array) {
-				log.error(position(), "ERROR_NO_INDEX", name);
+				log.error(position(), "ERROR_NO_INDEX", var->name);
 				append_expolit_warning(var);
 			}
 			if (!var->has_set) {
-				//log.warning(position(), "ERROR_GET_UNINIT", name);
+				//log.warning(position(), "ERROR_GET_UNINIT", var->name);
 				//append_expolit_warning(var);
 			}
 		}
@@ -1367,7 +1367,7 @@ private:
 		size_t size = 0;
 		std::string_view str(get_string(L, 1));
 		jass->comments.emplace(jass->linecount, str);
-		return 1;
+		return 0;
 	}
 
 	static int l_NULL(lua_State* L) {
@@ -1386,8 +1386,7 @@ private:
 	}
 
 	static int String(lua_State* L) {
-		size_t size = 0;
-		std::string_view str(get_string(L, 1));
+		gc_string_t str(get_string(L, 1));
 
 		auto node = jass_gc->string_nodes.find(str);
 		if (node) {
@@ -1482,9 +1481,7 @@ private:
 	}
 
 	static int Code(lua_State* L) {
-
-		size_t size = 0;
-		string_t name(get_string(L, 1));
+		gc_string_t name(get_string(L, 1));
 
 		auto func = jass->get_function(name);
 	
@@ -1499,7 +1496,7 @@ private:
 	
 		auto node = jass_gc->code_nodes.find(name);
 		if (node) {
-			PushIndex(L, jass_gc->node(node));
+			PushIndex(L, node->handle);
 			return 1;
 		}
 		node = std::make_shared<ExpCodeValue>(name);
@@ -1513,6 +1510,16 @@ private:
 	static int ECall(lua_State* L) {
 		string_t name(get_string(L, 1));
 
+		size_t args_count = lua_gettop(L);
+
+		if (args_count == 1) { //如果没有参数 判断是否有缓存节点
+			auto call = jass_gc->name2ecall.find(name);
+			if (call) {
+				PushIndex(L, call->handle);
+				return 1;
+			}
+		}
+
 		auto func = jass->get_function(name);
 
 		if (!func) {
@@ -1522,7 +1529,6 @@ private:
 
 		auto call = std::make_shared<ExpCall>(func->name, func->returns);
 
-		size_t args_count = lua_gettop(L);
 		call->params.resize(args_count - 1);
 
 		for (size_t i = 1; i < args_count; i++) {
@@ -1531,6 +1537,9 @@ private:
 
 		jass->check_call(func, call);
 	
+		if (args_count == 1) {//如果没有参数缓存节点
+			jass_gc->name2ecall.save(name, call);
+		}
 		PushIndex(L, jass_gc->node(call));
 		return 1;
 	}
@@ -1542,12 +1551,14 @@ private:
 
 		auto var = jass->get_variable(name);
 	
-		jass->check_get(var, true);
+	
 	
 		if (!var) {
 			PushIndex(L, 0);
 			return 1;
 		}
+		jass->check_get(var, true);
+
 		auto index_exp = CastNode<ExpNode>(jass_gc->node(index));
 		auto exp_vari = std::make_shared<ExpVari>(var, index_exp);
 	
@@ -1563,15 +1574,14 @@ private:
 			PushIndex(L, 0);
 			return 1;
 		}
-
-		jass->check_get(var, false);
-		
 		auto exp_var = jass_gc->var_nodes.find(var.get());
 		if (!exp_var) {
 			exp_var = std::make_shared<ExpVar>(var);
 			jass_gc->var_nodes.save(var.get(), exp_var);
 			jass_gc->node(exp_var);
-		}
+
+			jass->check_get(var, false);
+		} 
 	
 		PushIndex(L, exp_var->handle);
 		return 1;
@@ -1831,33 +1841,37 @@ private:
 	}
 
 	static int ACall(lua_State* L) {
-		size_t size = 0;
+		
 		string_t name(get_string(L, 1));
 
 		auto func = jass->get_function(name);
 		auto current = jass->functions.back();
 	
-		if (func && current && current->is_const && !func->is_const) {
+		if (current && current->is_const && func && !func->is_const) {
 			jass->log.error(jass->position(), "ERROR_CALL_IN_CONSTANT", name);
 		}
 	
+		size_t args_count = lua_gettop(L);
+
+		if (args_count == 1) { //如果没有参数 判断是否有缓存动作节点
+			auto action = jass_gc->name2acall.find(name);
+			if (action) {
+				jass->block_add_node(action);
+				return 0;
+			}
+		}
+
 		string_t exp_type = "nothing";
 		if (func) {
 			exp_type = func->returns;
 		}
 
 		auto call = std::make_shared<ExpCall>(name, exp_type);
-		
-		call->is_action = true;
+		call->params.resize(args_count - 1);
 
-		size = lua_gettop(L);
-
-		call->params.resize(size - 1);
-
-		for (size_t i = 1; i < size; i++) {
+		for (size_t i = 1; i < args_count; i++) {
 			call->params[i - 1] = CastNode<ExpNode>(jass_gc->node(LoadIndex(L, i + 1)));
 		}
-
 		if (func) {
 			jass->check_call(func, call);
 		}
@@ -1866,6 +1880,10 @@ private:
 		
 		jass->block_add_node(action);
 
+		if (args_count == 1) {
+			jass_gc->name2acall.save(name, action);
+		}
+		
 		return 0;
 	}
 
