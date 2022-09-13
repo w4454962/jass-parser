@@ -124,12 +124,11 @@ Global      <-  !GLOBALS !FUNCTION !NATIVE
                 ({CONSTANT?} Name {ARRAY?} Name (ASSIGN Exp)?)
             ->  Global
 
-Local       <-  (LocalDef LocalExp?)
+Local       <-  ((CONSTANT -> constantLocal)? LOCAL Name {ARRAY?} Name LocalExp?)
             ->  Local
             /   TYPE Ignore
             ->  typeInFunction
-LocalDef    <-  ((CONSTANT -> constantLocal)? LOCAL Name {ARRAY?} Name)
-            ->  LocalDef
+
 LocalExp    <-  ASSIGN Exp
 Locals      <-  (Local? Nl)+
 

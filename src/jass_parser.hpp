@@ -1766,7 +1766,8 @@ private:
 		return 0;
 	}
 
-	static int LocalDef(lua_State* L) {
+
+	static int Local(lua_State* L) {
 		string_t type(get_string(L, 1));
 		string_t array(get_string(L, 2));
 		string_t name(get_string(L, 3));
@@ -1787,7 +1788,7 @@ private:
 			}
 		}
 		auto local = std::make_shared<LocalNode>(type, name, is_array, jass->file, jass->linecount);
-	
+
 		//if (config.exploit) {
 		//	auto global = globals.find(name);
 		//	if (global && config.exploit) { //如果局部变量与全局变量同名 可以影响全局变量
@@ -1797,19 +1798,14 @@ private:
 		//		exploits.emplace(gc_string_t(name), local);
 		//	}
 		//}
-	
-		PushIndex(L, jass_gc->node(local));
-		return 1;
-	}
 
-	static int Local(lua_State* L) {
-		auto local = CastNode<LocalNode>(jass_gc->node(LoadIndex(L, 1)));
+		//PushIndex(L, jass_gc->node(local));
+		//auto local = CastNode<LocalNode>(jass_gc->node(LoadIndex(L, 1)));
 		ExpPtr exp;
 	
-		if (lua_gettop(L) > 1) {
-			exp = CastNode<ExpNode>(jass_gc->node(LoadIndex(L, 2)));
-		}
-		if (local && exp) {
+		if (lua_gettop(L) > 3) {
+			exp = CastNode<ExpNode>(jass_gc->node(LoadIndex(L, 4)));
+
 			local->has_set = true;
 	
 			local->exp = exp;
@@ -1831,12 +1827,10 @@ private:
 			}
 		}
 
-		if (local) {
-			auto func = jass->functions.back();
+		auto func = jass->functions.back();
 	
-			func->locals.save(local->name, local);
-		}
-
+		func->locals.save(local->name, local);
+	
 		return 0;
 	}
 
@@ -2401,7 +2395,6 @@ private:
 		bind(GlobalsStart);
 		bind(GlobalsEnd);
 		bind(Global);
-		bind(LocalDef);
 		bind(Local);
 		bind(ACall);
 		bind(Set);
