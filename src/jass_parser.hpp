@@ -822,7 +822,9 @@ public:
 	Jass()
 	{
 		gc = std::make_shared<Cache>();
-	
+		functions.list.reserve(20000);
+		globals.list.reserve(10000);
+		natives.list.reserve(2000);
 
 		type = NodeType::JASS;
 
@@ -1386,7 +1388,7 @@ private:
 	}
 
 	static int String(lua_State* L) {
-		gc_string_t str(get_string(L, 1));
+		string_t str(get_string(L, 1));
 
 		auto node = jass_gc->string_nodes.find(str);
 		if (node) {
@@ -1394,7 +1396,7 @@ private:
 			return 1;
 		}
 		node = std::make_shared<ExpStringValue>(str);
-		jass_gc->string_nodes.save(str, node);
+		jass_gc->string_nodes.save(node->value, node);
 
 		PushIndex(L, jass_gc->node(node));
 		return 1;
@@ -1481,7 +1483,7 @@ private:
 	}
 
 	static int Code(lua_State* L) {
-		gc_string_t name(get_string(L, 1));
+		string_t name(get_string(L, 1));
 
 		auto func = jass->get_function(name);
 	
@@ -1500,7 +1502,7 @@ private:
 			return 1;
 		}
 		node = std::make_shared<ExpCodeValue>(name);
-		jass_gc->code_nodes.save(name, node);
+		jass_gc->code_nodes.save(node->value, node);
 	
 		PushIndex(L, jass_gc->node(node));
 
@@ -2211,8 +2213,6 @@ private:
 	};
 
 	static int FunctionName(lua_State* L) {
-		size_t size = 0;
-
 		string_t constant(get_string(L, 1));
 		string_t name(get_string(L, 2));
 
@@ -2225,7 +2225,7 @@ private:
 		auto func = std::make_shared<FunctionNode>(is_const, name, jass->file, jass->linecount);
 
 		jass->has_function = true;
-		jass->functions.save(name, func);
+		jass->functions.save(func->name, func);
 
 		jass->block_stack.emplace_back(func);
 		return 0;
@@ -2249,7 +2249,7 @@ private:
 		if (!jass->types.find(type)) {
 			jass->log.error(jass->position(), "ERROR_UNDEFINE_TYPE", type);
 		}
-		func->args.save(name, arg);
+		func->args.save(arg->name, arg);
 
 		return 0;
 	};
