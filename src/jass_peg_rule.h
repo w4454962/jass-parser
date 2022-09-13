@@ -2,8 +2,8 @@
 
 static const char jass_peg_rule[] = R"(
 
-Jass        <-  {| (Nl / Chunk)* |} ->Jass
-                 Sp        
+Jass        <-  ((Nl / Chunk)*)  Sp  {} -> Jass
+                       
                 
 Chunk       <-  (   Type
                 /   Globals
@@ -12,53 +12,55 @@ Chunk       <-  (   Type
                 -- 错误收集
                 /   Action %{ERROR_ACTION_IN_CHUNK}
                 )
-            ->  Chunk
+       
 
 
-Function    <-  FDef -> FunctionStart Nl^MISS_NL
+Function    <-  FDef Nl^MISS_NL
                 (
                     FLocals
                     Actions
-                ) -> FunctionBody
+                )  -> FunctionBody
                 FEnd -> FunctionEnd
+FDef        <-  (
+                    ({CONSTANT?} FUNCTION  Name TAKES^SYNTAX_ERROR) -> FunctionName
+                    FTakes 
+                    (FReturns) -> FunctionReturns
+                )
 
-FDef        <-  {CONSTANT?} FUNCTION (Name FTakes FReturns)^SYNTAX_ERROR
-FTakes      <-  TAKES^SYNTAX_ERROR 
-                (
-                    NOTHING -> Nil
-                /   {|NArg (COMMA NArg)*|} -> FArgs
+FTakes      <-  (
+                    NOTHING
+                /   (FArg (COMMA FArg)*)
                 /   Sp %{SYNTAX_ERROR}
                 )
-FArg        <-  Name Name
+FArg        <-  (Name Name) -> FArg 
+
 FReturns    <-  RETURNS^SYNTAX_ERROR Name
-FLocals     <-  {|Locals|} / {} -> Nil
+FLocals     <-  {Locals} / {} -> Nil
 FEnd        <-  (ENDFUNCTION Ed^MISS_NL)?
 
 
 
-Native      <-  (
-                    {} -> Point
-                    {CONSTANT?} NATIVE Name NTakes NReturns
+Native      <-  ( 
+                    ({CONSTANT?} NATIVE Name TAKES^SYNTAX_ERROR) -> NativeName
+                     NTakes 
+                    (NReturns) -> NativeReturns
                 )
-            ->  Native
-NTakes      <-  TAKES
-                (
-                    NOTHING -> Nil
-                /   {|NArg (COMMA NArg)*|} -> NArgs
+         
+
+NTakes      <-  (
+                    NOTHING
+                /   (NArg (COMMA NArg)*)
                 )
-NArg        <-  Name Name
+
+NArg        <-  (Name Name) -> NArg
 NReturns    <-  RETURNS^SYNTAX_ERROR Name
 
 
 
 Actions     <-  (Nl / Action)*
 
-Action      <-  (
-                {} -> Point
-                (ACall / ASet / AReturn / AExit / ALogic / ALoop / AError)
-            )
-        ->  Action
-
+Action      <- (ACall / ASet / AReturn / AExit / ALogic / ALoop / AError)
+         
 
 -- Are you kidding me Blizzard?
 ACall       <-  (DEBUG? CALL Name^SYNTAX_ERROR PL ACallArgs? PR^ERROR_MISS_PR)
@@ -116,7 +118,7 @@ AError      <-  LOCAL Ignore
 
 
 Globals     <-  GLOBALS -> GlobalsStart Nl^MISS_NL
-                    {| (Nl / Global)* |} -> Globals
+                     ((Nl / Global)*)
                 {(ENDGLOBALS Ed^MISS_NL)?} -> GlobalsEnd
 Global      <-  !GLOBALS !FUNCTION !NATIVE
                 ({CONSTANT?} Name {ARRAY?} Name (ASSIGN Exp)?)

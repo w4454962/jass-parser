@@ -18,17 +18,18 @@
 #include <sstream>
 #include <stack>
 #include <array>
-#include <set>
+#include <unordered_set>
 #define __cpp_lib_format
 #include <format>
 
-#define SOL_ALL_SAFETIES_ON 1
+
+//#define SOL_ALL_SAFETIES_ON 1
 #include <sol/sol.hpp>
 
 #pragma warning(disable:4309 4455)
 
 namespace fs = std::filesystem;
-
+ 
 
 
 std::string_view convert_message(std::string_view msgt);

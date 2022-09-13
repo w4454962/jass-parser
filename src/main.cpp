@@ -1,5 +1,5 @@
-﻿
-
+﻿#include <Windows.h>
+//#include <mimalloc-new-delete.h>
 
 #include "stdafx.h"
 
@@ -90,7 +90,66 @@ void init_config() {
 //
 //}
 
+void test_file(sol::state& lua, const fs::path& file) {
 
+	std::ifstream stream(file, std::ios::binary);
+
+	ParseConfig config;
+
+	config.file = file.filename().string();
+
+	config.script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+
+	auto jass = std::make_shared<Jass>();
+
+	bool success = 0;// jass_parser(lua, config, jass);
+
+	std::string src = file.string();
+
+	fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
+
+	if (!fs::exists(path)) {
+		path = std::regex_replace(src, std::regex("\\.j"), ".warn");
+	}
+
+	if (jass->log.errors.size() == 0) {
+		if (!success) {
+			std::cout << src << "\t fail" << std::endl;
+			return;
+		}
+		else {
+			std::cout << src << "\tpass" << std::endl;
+		}
+	}
+
+	if (jass->log.errors.size() > 0) {
+		std::cout << src << "\t error" << std::endl;
+
+		for (auto v : jass->log.errors) {
+			std::cout << "[error]<" << v->message << ">" << std::endl;
+		}
+	}
+	if (jass->log.warnings.size() > 0) {
+		for (auto v : jass->log.warnings) {
+			std::cout << "[warning]<" << v->message << ">" << std::endl;
+		}
+	}
+
+	std::ifstream f(path, std::ios::binary);
+	if (f.is_open()) {
+
+		std::string file_str = std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+
+		std::cout << "[error]{" << file_str << "}" << std::endl;
+
+		f.close();
+	}
+
+
+	stream.close();
+
+	lua["collectgarbage"]("collect");
+}
 
 bool tests(sol::state& lua, const fs::path& tests_path) {
 
@@ -112,78 +171,27 @@ bool tests(sol::state& lua, const fs::path& tests_path) {
 
 
 	for (auto& file : paths) {
-		std::ifstream stream(file, std::ios::binary);
-
-		ParseConfig config;
-		
-		config.file = file.filename().string();
-
-		config.script = std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
-
-		ParseResult result;
-		bool success = jass_parser(lua, config, result);
-
-		 
-		std::string src = file.string();
-
-		fs::path path = std::regex_replace(src, std::regex("\\.j"), ".err");
-
-		if (!fs::exists(path)) {
-			path = std::regex_replace(src, std::regex("\\.j"), ".warn");
-		}
-
-		if (result.log.errors.size() == 0) {
-			if (!success) {
-				std::cout << src << "\t fail" << std::endl;
-				break;
-			} else {
-				std::cout << src << "\tpass" << std::endl;
-			}
-		} 
-		
-		if (result.log.errors.size() > 0) {
-			std::cout << src << "\t error" << std::endl;
-
-			for (auto v : result.log.errors) {
-				std::cout << "[error]<" << v->message << ">" << std::endl;
-			}
-		}
-		if (result.log.warnings.size() > 0) {
-			for (auto v : result.log.warnings) {
-				std::cout << "[warning]<" << v->message << ">" << std::endl;
-			}
-		}
-
-		std::ifstream file(path, std::ios::binary);
-		if (file.is_open()) {
-
-			std::string file_str = std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-
-			std::cout << "[error]{" << file_str << "}" << std::endl;
-		
-			file.close();
-		}
-		
+		test_file(lua, file);
 	}
 
 	return 1;
 }
 
 
-void check_script(sol::state& lua, const fs::path file, ParseResult& result) {
-	ParseConfig config;
+void check_script(sol::state& lua, const fs::path& file, std::shared_ptr<Jass> jass) {
+	ParseConfig* config = new ParseConfig();
 
-	config.file = file.filename().string();
+	config->file = file.filename().string();
 	
 	std::ifstream stream(file, std::ios::binary);
 
-	config.script = std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+	config->script = std::make_shared<std::string>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 
-	bool success = jass_parser(lua, config, result);
-
-	auto& errors = result.log.errors;
-	auto& warnings = result.log.warnings;
-
+	bool success = jass->run(*config);
+	
+	auto& errors = jass->log.errors;
+	auto& warnings = jass->log.warnings;
+	
 	if (errors.size() == 0) {
 		if (!success) {
 			std::cout << file << "\t fail" << std::endl;
@@ -192,23 +200,69 @@ void check_script(sol::state& lua, const fs::path file, ParseResult& result) {
 			std::cout << file << "\tpass" << std::endl;
 		}
 	}
-
+	
 	if (errors.size() > 0) {
 		std::cout << file << "\t error" << std::endl;
-
+	
 		for (auto v : errors) {
 			std::cout << "[error]<" << v->message << ">" << std::endl;
 			std::cout << "{" << v->at_line << "}" << std::endl;
 		}
 	}
-
+	
 	if (warnings.size() > 0) {
 		for (auto v : warnings) {
 			std::cout << "[warning]<" << v->message << ">" << std::endl;
 			std::cout << "{" << v->at_line << "}" << std::endl;
 		}
 	}
+
+	stream.close();
+	delete config;
+
 }
+
+void check(sol::state& lua) {
+
+	double mem_start = lua["collectgarbage"]("count");
+
+	fs::path path = fs::current_path() / "war3" / "24";
+
+	clock_t start = clock();
+
+	auto jass = std::make_shared<Jass>();
+
+	jass->init(lua.lua_state());
+
+	check_script(lua, path / "common.j", jass);
+	check_script(lua, path / "blizzard.j", jass);
+	check_script(lua, path / "war3map.j", jass);
+
+
+	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
+
+
+	double mem_end = lua["collectgarbage"]("count");
+
+	//check_script(lua, fs::current_path() / "tests" / "aa.j", *result);
+
+	std::cout << "lua memory start " << mem_start / 1024 << " mb" << std::endl;
+	std::cout << "lua memory end " << mem_end / 1024 << " mb" << std::endl;
+
+	lua["collectgarbage"]("collect");
+	mem_end = lua["collectgarbage"]("count");
+	std::cout << "lua memory end2 " << mem_end / 1024 << " mb" << std::endl;
+
+
+	return;
+}
+
+
+int test(lua_State* L) {
+
+	return 0;
+}
+
 
 int main(int argn, char** argv) {
 
@@ -216,48 +270,85 @@ int main(int argn, char** argv) {
 
 	init_config();
 
+
+	sol::state lua;
+
+	lua_State* L = lua.lua_state();
+
+
+
+	lua.open_libraries();
+
+	//lua.open_libraries(sol::lib::jit);
+
+	//lua["jit"]["on"](true);
+	//lua["jit"]["opt"]["start"](3);
+
+	lua.require("lpeglabel", luaopen_lpeglabel);
+	
+	lua.require_script("relabel", relabel_script, false, "relabel");
+
+	lua_register(L, "timer_start", [](lua_State* L)->int {
+		uint64_t begin_time;
+		QueryPerformanceCounter((LARGE_INTEGER*)&begin_time);
+
+		lua_pushinteger(L, begin_time);
+		return 1;
+	});
 	
 
-	sol::state* lua = new sol::state();
+	auto get_time = [](uint64_t time) {
+		LARGE_INTEGER litmp;
+		QueryPerformanceFrequency(&litmp); //获取频率
+		double time_fre = (double)litmp.QuadPart;
+		double time_elapsed = (double)time / time_fre;
+		return time_elapsed;
+	};
 
-	lua->open_libraries();
+	lua.require_script("peg", peg_script, false, "peg");
 
-	lua->require("ffi", luaopen_ffi);
-	lua->require("lpeglabel", luaopen_lpeglabel);
+	//auto tbl = lua.create_table();
+	//
+	//lua["tbl"] = tbl;
+	//
+	//tbl["test"] = [](lua_State* L)->int {
+	//	lua_Number node = lua_tonumber(L, 1);
+	//	lua_pushnumber(L, node);
+	//
+	//	return 1;
+	//};
+	//
+	//clock_t start = clock();
 
-	lua->require_script("relabel", relabel_script, false, "relabel");
-	lua->require_script("peg", peg_script, false, "peg");
+	//lua.script("for i = 0, 8000000 do tbl.test(i, i, i, i) end");
 
-	//tests(lua, fs::path(argv[1]));
 
-	double mem_start = (*lua)["collectgarbage"]("count");
+	//std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
 
-	fs::path path = fs::current_path() / "war3" / "24";
+	check(lua);
+	
+	//delete lua;
+	//lua = nullptr;
+	
+	sol::lua_table res = lua["timer_map"];
+	
+	std::cout << "Binary " << num << std::endl;
+	
+	std::ofstream file("out.txt", std::ios::binary);
+	file << "name\ttime\tcount" << std::endl;
+	for (auto v : res) {
+		auto key = v.first.as<std::string>();
+		double time = get_time(v.second.as<uint64_t>());
+		int count = lua["count_map"][key].get<int>();
 
-	clock_t start = clock();
+		char data[0x100];
 
-	ParseResult* result = new ParseResult();
-
-	check_script(*lua, path / "common.j", *result);
-	check_script(*lua, path / "blizzard.j", *result);
-	check_script(*lua, path / "war3map.j", *result); 
-
-	double mem_end = (*lua)["collectgarbage"]("count");
-
-	(*lua)["collectgarbage"]("collect");
-
-	double mem_end2 = (*lua)["collectgarbage"]("count");
-
-	//check_script(lua, fs::current_path() / "tests" / "aa.j", *result);
-
-	std::cout << "lua memory start " << mem_start / 1024 << " mb" << std::endl;
-	std::cout << "lua memory end " << mem_end / 1024 << " mb" << std::endl;
-	std::cout << "lua memory end2 " << mem_end2 / 1024 << " mb" << std::endl;
-
-	std::cout << "time : " << ((double)(clock() - start) / CLOCKS_PER_SEC) << " s" << std::endl;;
-
-	delete lua;
-	lua = nullptr;
+		sprintf(data, "%s\t%.06f\t%i", key.c_str(), time, count);
+		file << data << std::endl;
+	}
+	file.close()
+;	
+	//lua.require_file("main", (fs::current_path() / "src2" / "main.lua").string());
 	
 	return 0;
 }
