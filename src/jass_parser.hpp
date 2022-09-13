@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include "stdafx.h"
 #include "jass_peg_rule.h"
-//#include "mimalloc.h"
+#include "mimalloc.h"
 std::string_view convert_message(std::string_view msg);
 
 int num = 0, num2 = 0;
@@ -1387,7 +1387,7 @@ private:
 
 	static int String(lua_State* L) {
 		size_t size = 0;
-		std::string_view str(get_string(L, 1));
+		gc_string_t str(get_string(L, 1));
 
 		auto node = jass_gc->string_nodes.find(str);
 		if (node) {
@@ -1484,7 +1484,7 @@ private:
 	static int Code(lua_State* L) {
 
 		size_t size = 0;
-		string_t name(get_string(L, 1));
+		gc_string_t name(get_string(L, 1));
 
 		auto func = jass->get_function(name);
 	

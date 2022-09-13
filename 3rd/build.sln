@@ -8,6 +8,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ffi", "luaffi\makefiles\ffi
 	ProjectSection(ProjectDependencies) = postProject
 		{B84F7231-16CE-41D8-8C08-7B523FF4225B} = {B84F7231-16CE-41D8-8C08-7B523FF4225B}
 		{76338556-5419-494A-A4C6-D79090629054} = {76338556-5419-494A-A4C6-D79090629054}
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6} = {ABB5EAE7-B3E6-432E-B636-333449892EA6}
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lua", "lua\build\lua.vcxproj", "{76338556-5419-494A-A4C6-D79090629054}"
@@ -16,6 +17,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lua", "lua\build\lua.vcxpro
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lpeglabel", "lpeglabel\build\lpeglabel.vcxproj", "{D31F2139-00D3-4725-AA01-1B44AC1F772E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc", "mimalloc\ide\vs2019\mimalloc.vcxproj", "{ABB5EAE7-B3E6-432E-B636-333449892EA6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,6 +60,14 @@ Global
 		{D31F2139-00D3-4725-AA01-1B44AC1F772E}.Release|x64.Build.0 = Release|x64
 		{D31F2139-00D3-4725-AA01-1B44AC1F772E}.Release|x86.ActiveCfg = Release|Win32
 		{D31F2139-00D3-4725-AA01-1B44AC1F772E}.Release|x86.Build.0 = Release|Win32
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Debug|x64.ActiveCfg = Debug|x64
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Debug|x64.Build.0 = Debug|x64
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Debug|x86.ActiveCfg = Debug|Win32
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Debug|x86.Build.0 = Debug|Win32
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Release|x64.ActiveCfg = Release|x64
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Release|x64.Build.0 = Release|x64
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Release|x86.ActiveCfg = Release|Win32
+		{ABB5EAE7-B3E6-432E-B636-333449892EA6}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
