@@ -1367,7 +1367,7 @@ private:
 
 	static int Comment(lua_State* L) {
 		size_t size = 0;
-		std::string_view str(get_string(L, 1));
+		gc_string_t str(get_string(L, 1));
 		jass->comments.emplace(jass->linecount, str);
 		return 0;
 	}
