@@ -50,5 +50,8 @@
     <ClInclude Include="src\jass_parser.hpp">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="src\SmallVector.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

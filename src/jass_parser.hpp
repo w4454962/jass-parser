@@ -2,6 +2,12 @@
 #include "stdafx.h"
 #include "jass_peg_rule.h"
 #include "mimalloc.h"
+#include "smallvector.h"
+
+template <typename T, unsigned N>
+using small_vector_t = llvm_vecsmall::SmallVector<T, N>;
+
+
 std::string_view convert_message(std::string_view msg);
 
 int num = 0, num2 = 0;
@@ -30,7 +36,7 @@ struct Container
 {
 	typedef std::shared_ptr<Type> object_ptr;
 
-	std::vector<object_ptr> list;
+	small_vector_t<object_ptr, 8> list;
 	std::unordered_map <string_t, size_t> map;
 
 	bool save(const string_t& name, const object_ptr& obj) {
@@ -407,7 +413,8 @@ struct ExpUnary :ExpNode {
 
 struct ExpCall : ExpNode {
 	gc_string_t name;
-	std::vector<ExpPtr> params;
+
+	small_vector_t<ExpPtr, 4> params;
 
 	bool is_action;
 
@@ -504,7 +511,7 @@ struct IfNode : ActionNode {
 	size_t line;
 	TYPE iftype;
 	ExpPtr condition;
-	std::vector<ActionPtr> actions;
+	small_vector_t<ActionPtr, 4> actions;
 
 	IfNode(TYPE iftype_, const string_t& file_, size_t line_)
 		:iftype(iftype_),
@@ -534,7 +541,7 @@ struct IfNode : ActionNode {
 };
 
 struct ActionIf : ActionNode {
-	std::vector<std::shared_ptr<IfNode>> if_nodes;
+	small_vector_t<std::shared_ptr<IfNode>, 4> if_nodes;
 
 	ActionIf() {
 		type = NodeType::ACTION_IF;
@@ -566,7 +573,7 @@ struct ActionIf : ActionNode {
 };
 
 struct ActionLoop :ActionNode {
-	std::vector<ActionPtr> actions;
+	small_vector_t<ActionPtr, 4> actions;
 
 	size_t endline;
 
@@ -681,7 +688,7 @@ struct NativeNode : Node {
 struct FunctionNode : NativeNode {
 	Container<LocalNode> locals;
 
-	std::vector<ActionPtr> actions;
+	small_vector_t<ActionPtr, 4> actions;
 
 	bool has_return_any;
 

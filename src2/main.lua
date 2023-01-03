@@ -77,7 +77,15 @@ end
 
 local lua_memory = collectgarbage 'count'
 
+
 print(os.clock() - clock, string.format("%.3f mb", lua_memory / 1024))
+
+collectgarbage 'collect'
+
+local lua_memory2 = collectgarbage 'count'
+
+print(string.format("%.3f mb", lua_memory2 / 1024))
+
 
 for k, v in ipairs(option.errors) do 
     print(v.level, v.file, v.line, v.pos, v.code)

@@ -45,12 +45,9 @@ return function (peg_script, jass, parser_)
     parser = parser_ or {}
     local defs = {}
     for k, v in pairs(parser) do 
-        if defs[k] == nil then 
-            defs[k] = v
-        end 
+        defs[k] = v
     end 
    
-
     defs.nl = (m.P'\r\n' + m.S'\r\n') / (parser.nl or function () end)
     defs.Fail = function() return false end
     defs.True = m.Cc(true)
